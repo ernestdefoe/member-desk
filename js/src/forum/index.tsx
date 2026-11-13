@@ -5,7 +5,7 @@ import SessionDropdown from 'flarum/forum/components/SessionDropdown';
 import UserControls from 'flarum/forum/utils/UserControls';
 import type ItemList from 'flarum/common/utils/ItemList';
 import type Mithril from 'mithril';
-import { setLinks } from '../common/util';
+import { setLinks } from '../common/links';
 
 const EXT = 'ernestdefoe-member-desk';
 

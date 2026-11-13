@@ -4,6 +4,26 @@ import type Mithril from 'mithril';
 import MemberList from '../../common/MemberList';
 import MemberView from '../../common/MemberView';
 import LogView from '../../common/LogView';
+import css from './deskCss.generated';
+
+/*
+ * The page's styles arrive with this chunk (see build-css.cjs). A constructed stylesheet first:
+ * it isn't an inline <style>, so a strict Content-Security-Policy doesn't block it.
+ */
+(function addStyles() {
+  if (document.getElementById('member-desk-css') || (document as any).memberDeskCss) return;
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    (document as any).memberDeskCss = true;
+  } catch {
+    const style = document.createElement('style');
+    style.id = 'member-desk-css';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+})();
 
 /*
  * The forum's Member Desk for staff who can't open the admin (moderators by default). One lazy

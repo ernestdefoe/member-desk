@@ -31,19 +31,7 @@ export function api<T = any>(method: string, path: string, body?: any, params?: 
   } as any);
 }
 
-/** Where a member's page and the list live (admin and forum differ). */
-export interface DeskLinks {
-  list: () => string;
-  member: (id: number, tab?: string) => string;
-  log: () => string;
-  profile: (username: string) => string;
-  discussion: (id: number, slug: string, near?: number) => string;
-  admin: boolean;
-}
-
-let links: DeskLinks;
-export const setLinks = (l: DeskLinks) => (links = l);
-export const desk = () => links;
+export { desk, setLinks, type DeskLinks } from './links';
 
 export function num(n: number | null | undefined): string {
   return (n || 0).toLocaleString();
