@@ -174,7 +174,14 @@ class Bulk
     protected function reason(\Throwable $e): string
     {
         if ($e instanceof ValidationException) {
-            return (string) (array_values($e->getAttributes())[0] ?? 'invalid');
+            $value = (string) (array_values($e->getAttributes())[0] ?? '');
+
+            return match ($value) {
+                'self', 'admin', 'anonymized' => $value,
+                'nothing to restore' => 'nothing',
+                'not allowed' => 'permission',
+                default => 'invalid',
+            };
         }
         if ($e instanceof \Flarum\User\Exception\PermissionDeniedException) {
             return 'permission';

@@ -33,6 +33,7 @@ return [
         ->jsDirectory(__DIR__.'/js/dist/forum')
         ->css(__DIR__.'/less/forum.less')
         ->route('/member-desk', 'member-desk.index')
+        ->route('/member-desk/log', 'member-desk.log')
         ->route('/member-desk/{id:\d+}', 'member-desk.member'),
 
     new Extend\Locales(__DIR__.'/locale'),
