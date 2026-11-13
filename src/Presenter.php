@@ -47,7 +47,10 @@ class Presenter
             'avatarUrl' => $m->avatar_url,
             'email' => $this->email($actor, $m),
             'confirmed' => (bool) $m->is_email_confirmed,
-            'groups' => $m->groups->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+            // Some forums hold an explicit Member (3) row; Guest and Member aren't groups anyone picks.
+            'groups' => $m->groups->pluck('id')->map(fn ($id) => (int) $id)
+                ->reject(fn (int $id) => $id === \Flarum\Group\Group::GUEST_ID || $id === \Flarum\Group\Group::MEMBER_ID)
+                ->values()->all(),
             'joinedAt' => $m->joined_at?->toIso8601String(),
             'lastSeenAt' => $this->lastSeen($actor, $m),
             'posts' => (int) $m->comment_count,

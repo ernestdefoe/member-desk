@@ -69,7 +69,8 @@ class MemberDetail
         }
 
         return [
-            'bio' => $m->getAttribute('bio'),
+            // fof/user-bio stores the bio as formatter XML (<t>…</t>, <r>…</r>): staff see its text.
+            'bio' => ($bio = $m->getAttribute('bio')) ? trim(html_entity_decode(strip_tags((string) $bio), ENT_QUOTES | ENT_HTML5)) : null,
             'locale' => $m->getPreference('locale'),
             'discloseOnline' => (bool) $m->getPreference('discloseOnline'),
             'fields' => $fields,
