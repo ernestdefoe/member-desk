@@ -224,7 +224,7 @@ class Actions
         ]]);
 
         $hiddenPosts = [];
-        CommentPost::query()->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
+        CommentPost::query()->with(['user', 'discussion'])->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
             ->chunkById(200, function ($posts) use ($actor, &$hiddenPosts) {
                 foreach ($posts as $post) {
                     /** @var CommentPost $post */
@@ -238,7 +238,7 @@ class Actions
             });
 
         $hiddenDiscussions = [];
-        Discussion::query()->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
+        Discussion::query()->with('user')->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
             ->chunkById(200, function ($discussions) use ($actor, &$hiddenDiscussions) {
                 foreach ($discussions as $discussion) {
                     /** @var Discussion $discussion */
@@ -310,7 +310,7 @@ class Actions
         $after = $last->after ?? [];
         $entry = $this->recorder->record($actor, 'unspam', $member->id, null, ['restores' => $last->id], $batch, 'running');
 
-        CommentPost::query()->whereIn('id', $after['posts'] ?? [])->whereNotNull('hidden_at')
+        CommentPost::query()->with(['user', 'discussion'])->whereIn('id', $after['posts'] ?? [])->whereNotNull('hidden_at')
             ->chunkById(200, function ($posts) {
                 foreach ($posts as $post) {
                     /** @var CommentPost $post */
@@ -322,7 +322,7 @@ class Actions
                 }
             });
 
-        Discussion::query()->whereIn('id', $after['discussions'] ?? [])->whereNotNull('hidden_at')
+        Discussion::query()->with('user')->whereIn('id', $after['discussions'] ?? [])->whereNotNull('hidden_at')
             ->chunkById(200, function ($discussions) {
                 foreach ($discussions as $discussion) {
                     /** @var Discussion $discussion */

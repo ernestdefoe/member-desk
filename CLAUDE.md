@@ -18,4 +18,6 @@
 
 ## Testing
 
+- `composer test:setup` (SQLite: `touch /tmp/md_test.sqlite`, `DB_DRIVER=sqlite DB_DATABASE=/tmp/md_test.sqlite`) `&& composer test`, then `~/github/scopes/member-desk/dbtests.sh` (MySQL `dev_` + PostgreSQL `t_` in Docker; prints the driver and prefix). `composer analyse:phpstan`.
+- Browser checks: `~/github/scopes/member-desk/shots.mjs` (admin|forum, light|dark), `measure.mjs` (table fit at 390–1920).
 - Local forum `~/Herd/deskdev` (https://deskdev.test, MySQL `deskdev`, prefix `md_`; admin login in `~/Herd/deskdev-admin.txt`, API key in `~/Herd/deskdev-apikey.txt`). Seed: `php ~/github/scopes/member-desk/seed.php` (300 fake members, spam ring on 198.51.100.23).

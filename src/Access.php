@@ -137,7 +137,7 @@ class Access
             return $mode !== 'deletion';
         }
 
-        return (bool) $value && $value !== '0';
+        return (bool) $value; // '0' and '' are false too
     }
 
     /** @return array<string, bool> */
