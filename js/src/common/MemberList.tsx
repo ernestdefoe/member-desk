@@ -94,6 +94,12 @@ export default class MemberList extends Component {
     );
   }
 
+  /** A date filter, ignoring the half-typed years a date field reports while someone types (0002, 0202). */
+  date(key: 'joinedFrom' | 'joinedTo' | 'seenFrom' | 'seenTo', value: string) {
+    if (value !== '' && Number(value.slice(0, 4)) < 1990) return;
+    deskState().setFilter(key, value);
+  }
+
   nav(e: MouseEvent, href: string) {
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
     e.preventDefault();
@@ -196,14 +202,14 @@ export default class MemberList extends Component {
               </button>
             ))}
           </div>
-          <div className="MemberDesk-range">
+          <div className="MemberDesk-range MemberDesk-range--dates">
             <label>
               <span>{t('filters.from')}</span>
               <input
                 type="date"
                 className="FormControl"
                 value={f.joinedFrom}
-                onchange={(e: Event) => s.setFilter('joinedFrom', (e.target as HTMLInputElement).value)}
+                onchange={(e: Event) => this.date('joinedFrom', (e.target as HTMLInputElement).value)}
               />
             </label>
             <label>
@@ -212,7 +218,7 @@ export default class MemberList extends Component {
                 type="date"
                 className="FormControl"
                 value={f.joinedTo}
-                onchange={(e: Event) => s.setFilter('joinedTo', (e.target as HTMLInputElement).value)}
+                onchange={(e: Event) => this.date('joinedTo', (e.target as HTMLInputElement).value)}
               />
             </label>
           </div>
@@ -233,14 +239,14 @@ export default class MemberList extends Component {
                 </button>
               ))}
             </div>
-            <div className="MemberDesk-range">
+            <div className="MemberDesk-range MemberDesk-range--dates">
               <label>
                 <span>{t('filters.from')}</span>
                 <input
                   type="date"
                   className="FormControl"
                   value={f.seenFrom}
-                  onchange={(e: Event) => s.setFilter('seenFrom', (e.target as HTMLInputElement).value)}
+                  onchange={(e: Event) => this.date('seenFrom', (e.target as HTMLInputElement).value)}
                 />
               </label>
               <label>
@@ -249,7 +255,7 @@ export default class MemberList extends Component {
                   type="date"
                   className="FormControl"
                   value={f.seenTo}
-                  onchange={(e: Event) => s.setFilter('seenTo', (e.target as HTMLInputElement).value)}
+                  onchange={(e: Event) => this.date('seenTo', (e.target as HTMLInputElement).value)}
                 />
               </label>
             </div>

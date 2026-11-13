@@ -1683,3 +1683,8 @@ html[data-theme^='dark'] .MemberDeskConfirm {
     margin-left: auto;
   }
 }
+
+// Dates need room for the browser's "mm/dd/yyyy" and its calendar button.
+.MemberDesk-range--dates {
+  grid-template-columns: minmax(0, 1fr);
+}
