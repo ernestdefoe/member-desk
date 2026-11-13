@@ -52,13 +52,18 @@ class MemberQuery
         $groups = array_filter((array) Arr::get($f, 'groups', []), fn ($g) => $g !== '' && $g !== null);
         if ($groups) {
             $ids = array_map('intval', array_filter($groups, 'is_numeric'));
+            // 🚨 Filtering by a hidden group would list its members: only for staff who may see it.
+            if ($ids && ! $actor->can('viewHiddenGroups')) {
+                $ids = \Flarum\Group\Group::query()->whereIn('id', $ids)->where('is_hidden', false)->pluck('id')->map(fn ($id) => (int) $id)->all() ?: [0];
+            }
             $none = in_array('none', $groups, true);
             $query->where(function (Builder $w) use ($ids, $none) {
                 if ($ids) {
                     $w->whereHas('groups', fn ($g) => $g->whereIn('groups.id', $ids));
                 }
                 if ($none) {
-                    $w->orWhereDoesntHave('groups');
+                    // Some forums hold explicit Member rows: those still count as "no extra group".
+                    $w->orWhereDoesntHave('groups', fn ($g) => $g->whereNotIn('groups.id', [\Flarum\Group\Group::GUEST_ID, \Flarum\Group\Group::MEMBER_ID]));
                 }
             });
         }

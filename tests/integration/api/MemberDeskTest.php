@@ -143,6 +143,27 @@ class MemberDeskTest extends TestCase
     }
 
     #[Test]
+    public function a_hidden_group_cannot_be_used_to_list_its_members(): void
+    {
+        $this->db()->table('groups')->insert(['id' => 11, 'name_singular' => 'Secret', 'name_plural' => 'Secrets', 'is_hidden' => 1]);
+        $this->db()->table('group_user')->insert(['user_id' => 7, 'group_id' => 11]);
+        // An explicit Member row still counts as "no extra group".
+        $this->db()->table('group_user')->insert(['user_id' => 6, 'group_id' => Group::MEMBER_ID]);
+
+        [, $mod] = $this->call('GET', '/members?groups[]=11', 3);
+        $this->assertSame(0, $mod['total'], 'a moderator without viewHiddenGroups learns nothing');
+        [, $quiet] = $this->call('GET', '/members?q=quiet', 3);
+        $this->assertNotContains(11, $quiet['rows'][0]['groups']);
+
+        [, $admin] = $this->call('GET', '/members?groups[]=11', 1);
+        $this->assertSame([7], array_column($admin['rows'], 'id'));
+
+        [, $none] = $this->call('GET', '/members?groups[]=none&q=innocent', 1);
+        $this->assertSame(1, $none['total']);
+        $this->assertSame([], $none['rows'][0]['groups']);
+    }
+
+    #[Test]
     public function ip_search_needs_the_ip_permission(): void
     {
         [, $body] = $this->call('GET', '/members?q=198.51.100.23', 3);

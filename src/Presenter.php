@@ -48,9 +48,11 @@ class Presenter
             'email' => $this->email($actor, $m),
             'confirmed' => (bool) $m->is_email_confirmed,
             // Some forums hold an explicit Member (3) row; Guest and Member aren't groups anyone picks.
-            'groups' => $m->groups->pluck('id')->map(fn ($id) => (int) $id)
-                ->reject(fn (int $id) => $id === \Flarum\Group\Group::GUEST_ID || $id === \Flarum\Group\Group::MEMBER_ID)
-                ->values()->all(),
+            // Hidden groups only for staff who may see them.
+            'groups' => $m->groups
+                ->reject(fn ($g) => (int) $g->id === \Flarum\Group\Group::GUEST_ID || (int) $g->id === \Flarum\Group\Group::MEMBER_ID
+                    || ($g->is_hidden && ! $this->hiddenGroups($actor)))
+                ->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
             'joinedAt' => $m->joined_at?->toIso8601String(),
             'lastSeenAt' => $this->lastSeen($actor, $m),
             'posts' => (int) $m->comment_count,
@@ -62,6 +64,14 @@ class Presenter
             'isAdmin' => $this->access->isAdmin($m),
             'isYou' => $m->id === $actor->id,
         ];
+    }
+
+    /** @var array<int, bool> */
+    protected array $hiddenMemo = [];
+
+    protected function hiddenGroups(User $actor): bool
+    {
+        return $this->hiddenMemo[$actor->id] ??= $actor->can('viewHiddenGroups');
     }
 
     public function email(User $actor, User $m): string

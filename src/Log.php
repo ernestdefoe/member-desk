@@ -16,6 +16,7 @@ class Log
         $before = $e->before ?? [];
         unset($before['emailHash'], $before['ipHashes']);
         $after = $e->after ?? [];
+        unset($after['ipHash']);
 
         if ($e->action === 'spammer') {
             $after = [
