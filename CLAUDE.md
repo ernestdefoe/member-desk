@@ -15,6 +15,7 @@
 - **The log is filtered per viewer** (`Log::present(entry, viewer)`): last-seen, hidden groups and the suspend reason follow the viewer's own permissions, like the list.
 - **Spammer is restorable.** Its entry's `after` lists exactly the posts, discussions and IPs it hid/banned; `unspam` undoes only those. Never bans the actor's own IPs or an IP an active member also uses.
 - **List = fixed queries** (5 at 10/50/100 rows, admin and mod). Member page = fixed (23). Keep it that way: no per-row lookups.
+- **Admin-only on install** (Ernest, 2026-11-14): the migration grants no group anything; owners opt moderators in. The showcase stays admin-only (real members); live sites start admin-only.
 - Hard rules (`Access::PROTECTED`): never yourself, never an admin, for suspend/spammer/anonymize/delete/sign-out.
 - extend.php: string literals only.
 

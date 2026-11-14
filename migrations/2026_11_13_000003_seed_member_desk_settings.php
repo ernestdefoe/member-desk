@@ -2,8 +2,10 @@
 
 /*
  * A secret only this forum knows, used to salt the hashes kept for erased members (HMAC-SHA256),
- * three starter saved filters, and the default permissions (moderators see the list and IPs,
- * and can mark spammers; everything else is admin-only).
+ * and three starter saved filters.
+ *
+ * No permissions are granted: Member Desk starts ADMIN-ONLY (Ernest, 2026-11-14). It shows
+ * members' emails, IPs and history, so a forum owner opts moderators in on the Permissions page.
  */
 
 use Carbon\Carbon;
@@ -28,19 +30,6 @@ return [
                 ['user_id' => null, 'name' => 'Inactive 2 years', 'shared' => true, 'position' => 2, 'created_at' => $now,
                     'query' => json_encode(['notSeenFor' => 'P2Y'])],
             ]);
-        }
-
-        $defaults = [
-            'ernestdefoe-member-desk.view' => 4,
-            'ernestdefoe-member-desk.viewIps' => 4,
-            'ernestdefoe-member-desk.markSpammer' => 4,
-        ];
-
-        foreach ($defaults as $permission => $groupId) {
-            $exists = $db->table('group_permission')->where('permission', $permission)->where('group_id', $groupId)->exists();
-            if (! $exists && $db->table('groups')->where('id', $groupId)->exists()) {
-                $db->table('group_permission')->insert(['permission' => $permission, 'group_id' => $groupId]);
-            }
         }
     },
 

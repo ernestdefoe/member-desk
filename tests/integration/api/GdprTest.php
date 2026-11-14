@@ -141,6 +141,18 @@ class GdprTest extends TestCase
     }
 
     #[Test]
+    public function a_fresh_install_is_admin_only(): void
+    {
+        // Ernest, 2026-11-14: no group gets Member Desk until a forum owner grants it.
+        $this->prepareDatabase(['group_user' => [['user_id' => 2, 'group_id' => Group::MODERATOR_ID]]]);
+        $response = $this->send($this->request('GET', '/api/member-desk/members', ['authenticatedAs' => 2]));
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertSame(0, $this->app()->getContainer()->make(ConnectionInterface::class)
+            ->table('group_permission')->where('permission', 'like', 'ernestdefoe-member-desk.%')->count());
+        $this->assertSame(200, $this->send($this->request('GET', '/api/member-desk/members', ['authenticatedAs' => 1]))->getStatusCode());
+    }
+
+    #[Test]
     public function the_member_page_shows_an_erasure_request(): void
     {
         $this->app()->getContainer()->make(ConnectionInterface::class)->table('gdpr_erasure')->insert([
