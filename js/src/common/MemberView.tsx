@@ -922,7 +922,7 @@ export function describe(e: any, group: (id: number) => GroupInfo | undefined): 
   switch (e.action) {
     case 'addGroup':
     case 'removeGroup':
-      return group(a.group)?.name || `#${a.group}`;
+      return a.group == null ? ts('log.hidden_group') : group(a.group)?.name || `#${a.group}`;
     case 'suspend':
       return a.until
         ? (isForever(a.until) ? ts('log.forever') : ts('log.until', { date: date(a.until) })) + (a.reason ? ` · “${a.reason}”` : '')

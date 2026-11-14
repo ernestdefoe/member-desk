@@ -11,6 +11,8 @@
 - 🚨 **`JsonApi::process()` never loads the model or checks permissions for update/delete.** `Actions::call()` sends a real request through `JsonApi::handle()` with a path relative to the API (`/users/{id}`), so core's `can` checks and every extension's hooks run.
 - **Log before acting.** `Recorder::record()` writes the "as they were" snapshot first; erased members keep email/IPs only as HMAC-SHA256 hashes salted with `ernestdefoe-member-desk.salt`; `member-desk:prune` strips names and hashes after `retention_days` (90). Erasing a member scrubs names from their earlier entries.
 - **Gates leak if answered.** Email search/sort need viewEmails; IP search and the banned filter need viewIps; last-seen filters/sort need `user.viewLastSeenAt`. A filter the actor can't use is ignored.
+- **Bans only through fof/ban-ips' API** (`BanIps`, via `ApiCall`), never its table: its banIP check, validation and hooks decide. A mod without banIP still marks spammers; their IPs just stay unbanned (`banSkipped`).
+- **The log is filtered per viewer** (`Log::present(entry, viewer)`): last-seen, hidden groups and the suspend reason follow the viewer's own permissions, like the list.
 - **Spammer is restorable.** Its entry's `after` lists exactly the posts, discussions and IPs it hid/banned; `unspam` undoes only those. Never bans the actor's own IPs or an IP an active member also uses.
 - **List = fixed queries** (5 at 10/50/100 rows, admin and mod). Member page = fixed (23). Keep it that way: no per-row lookups.
 - Hard rules (`Access::PROTECTED`): never yourself, never an admin, for suspend/spammer/anonymize/delete/sign-out.

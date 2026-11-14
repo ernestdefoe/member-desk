@@ -22,6 +22,7 @@ class MemberDetail
         protected Optional $optional,
         protected Presenter $presenter,
         protected ConnectionInterface $db,
+        protected Log $logPresenter,
     ) {
     }
 
@@ -42,7 +43,7 @@ class MemberDetail
             'notes' => $this->notes($actor, $m),
             'warnings' => $this->warnings($actor, $m),
             'suspension' => $this->suspension($m),
-            'log' => $this->log($m),
+            'log' => $this->log($actor, $m),
             'erasure' => $this->erasure($m),
             'can' => $this->can($actor, $m),
         ];
@@ -355,11 +356,11 @@ class MemberDetail
     }
 
     /** @return array<int, array<string, mixed>> */
-    protected function log(User $m): array
+    protected function log(User $actor, User $m): array
     {
         return AuditEntry::query()->where('user_id', $m->id)->with('actor')
             ->orderByDesc('id')->limit(50)->get()
-            ->map(fn (AuditEntry $e) => Log::present($e))->all();
+            ->map(fn (AuditEntry $e) => $this->logPresenter->present($e, $actor))->all();
     }
 
     /** @return array<string, mixed>|null */

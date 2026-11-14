@@ -5,13 +5,10 @@ namespace ErnestDefoe\MemberDesk;
 use Carbon\Carbon;
 use ErnestDefoe\MemberDesk\Audit\AuditEntry;
 use ErnestDefoe\MemberDesk\Audit\Recorder;
-use Flarum\Api\JsonApi;
 use Flarum\Api\Resource\UserResource;
 use Flarum\Discussion\Discussion;
 use Flarum\Foundation\ValidationException;
 use Flarum\Http\AccessToken;
-use Flarum\Http\RequestUtil;
-use Laminas\Diactoros\ServerRequest;
 use Flarum\Post\CommentPost;
 use Flarum\User\User;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -35,7 +32,8 @@ class Actions
     public const FOREVER = '2038-01-01T00:00:00+00:00';
 
     public function __construct(
-        protected JsonApi $api,
+        protected ApiCall $call,
+        protected BanIps $bans,
         protected Recorder $recorder,
         protected Access $access,
         protected Optional $optional,
@@ -73,28 +71,20 @@ class Actions
     }
 
     /**
-     * 🚨 JsonApi::process() never loads the model or checks the endpoint's permission for an
-     * update/delete, so we send a real request through handle(): core finds the member, runs
-     * its `can` checks and every extension's hooks, exactly as for a request from the browser.
+     * Through core's own user update (see ApiCall): core finds the member, runs its `can` checks
+     * and every extension's hooks, exactly as for a request from the browser.
      *
      * @param array<string, mixed> $data attributes and/or relationships
      */
     protected function update(User $actor, User $member, array $data): void
     {
-        $this->call($actor, 'update', 'PATCH', $member, ['data' => ['type' => 'users', 'id' => (string) $member->id] + $data]);
+        $this->user($actor, 'update', 'PATCH', $member, ['data' => ['type' => 'users', 'id' => (string) $member->id] + $data]);
     }
 
     /** @param array<string, mixed> $body */
-    protected function call(User $actor, string $endpoint, string $method, User $member, array $body): void
+    protected function user(User $actor, string $endpoint, string $method, User $member, array $body): void
     {
-        // A path relative to the API, as the router hands it to JsonApi.
-        $request = (new ServerRequest([], [], '/users/'.$member->id, $method))
-            ->withParsedBody($body)
-            ->withHeader('Content-Type', 'application/vnd.api+json')
-            ->withHeader('Accept', 'application/vnd.api+json');
-        $request = RequestUtil::withActor($request, $actor);
-
-        $this->api->forResource(UserResource::class)->forEndpoint($endpoint)->handle($request);
+        $this->call->send($actor, UserResource::class, $endpoint, $method, '/users/'.$member->id, $body);
     }
 
     /** @return array<int, array{id: int, name: string}> */
@@ -262,17 +252,18 @@ class Actions
                 // Never ban the acting staff member's own address, or one an active member also
                 // uses (a shared home, office or carrier NAT). In a spam ring the shared address
                 // is banned once the last account on it has been marked.
-                if (isset($already[$ip]) || $this->actorUses($actor, $ip) || $this->sharedWithActive($member, $ip)) {
+                if (isset($already[$ip]) || $this->bans->actorUses($actor, $ip) || $this->sharedWithActive($member, $ip)) {
                     continue;
                 }
-                $ban = new \FoF\BanIPs\BannedIP();
-                $ban->creator_id = $actor->id;
-                $ban->address = $ip;
-                $ban->reason = 'Spammer (Member Desk)';
-                $ban->user_id = $member->id;
-                $ban->created_at = Carbon::now();
-                $ban->save();
-                $banned[] = $ip;
+                // Through fof/ban-ips' own API: a staff member it won't let ban (no banIP
+                // permission) still marks the spammer; the IPs just stay unbanned.
+                try {
+                    if ($this->bans->ban($actor, $ip, $member->id, 'Spammer (Member Desk)')) {
+                        $banned[] = $ip;
+                    }
+                } catch (\Flarum\User\Exception\PermissionDeniedException|\Flarum\Foundation\ValidationException|\Tobyz\JsonApiServer\Exception\ForbiddenException|\Tobyz\JsonApiServer\Exception\UnprocessableEntityException) {
+                    $banSkipped = ($banSkipped ?? 0) + 1;
+                }
             }
         }
 
@@ -280,7 +271,7 @@ class Actions
             'posts' => $hiddenPosts,
             'discussions' => $hiddenDiscussions,
             'bannedIps' => $banned,
-        ]);
+        ] + (isset($banSkipped) ? ['banSkipped' => $banSkipped] : []));
     }
 
     protected function sharedWithActive(User $member, string $ip): bool
@@ -290,11 +281,6 @@ class Actions
 
         return $this->db->table('access_tokens')->where('last_ip_address', $ip)->where('user_id', '<>', $member->id)->whereIn('user_id', $active)->exists()
             || $this->db->table('posts')->where('ip_address', $ip)->where('user_id', '<>', $member->id)->whereIn('user_id', $active)->exists();
-    }
-
-    protected function actorUses(User $actor, string $ip): bool
-    {
-        return $this->db->table('access_tokens')->where('user_id', $actor->id)->where('last_ip_address', $ip)->exists();
     }
 
     /** Undo the member's latest spammer action, exactly as recorded. */
@@ -334,8 +320,8 @@ class Actions
                 }
             });
 
-        if ($this->optional->banIps() && ! empty($after['bannedIps'])) {
-            $this->db->table('banned_ips')->whereIn('address', $after['bannedIps'])->where('user_id', $member->id)->delete();
+        if (! empty($after['bannedIps'])) {
+            $this->bans->unban($actor, $after['bannedIps'], $member->id);
         }
 
         $previous = $last->before['suspendedUntil'] ?? null;
@@ -373,7 +359,7 @@ class Actions
 
         $this->recorder->scrubEarlier($member->id, $entry->id);
 
-        $this->call($actor, 'delete', 'DELETE', $member, $gdpr ? ['gdprMode' => $mode] : []);
+        $this->user($actor, 'delete', 'DELETE', $member, $gdpr ? ['gdprMode' => $mode] : []);
 
         if (! $gdpr) {
             $this->finish($entry);

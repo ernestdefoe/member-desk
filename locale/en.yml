@@ -9,7 +9,7 @@ ernestdefoe-member-desk:
       log_description: Every action taken in Member Desk, who took it, and the member as they were.
     settings:
       retention: Keep erased members' names in the log for (days)
-      retention_help: "After this, an anonymized or deleted member's log entries keep only their ID and counts. Their email and IPs are never stored readably, only as scrambled hashes."
+      retention_help: "After this, an anonymized or deleted member's log entries keep only their ID and counts. Until then their email and IPs are kept only as salted hashes: pseudonymous, not anonymous (someone holding the database and this forum's secret could test guesses), so they are removed too."
       open: Open Member Desk
     permissions:
       view: Open Member Desk (the member list and member pages)
@@ -197,7 +197,7 @@ ernestdefoe-member-desk:
       message: Message to the member (optional)
       kept:
         anonymize: "Kept: their {posts, plural, one {# post} other {# posts}} and {discussions, plural, one {# discussion} other {# discussions}} stay, credited to an anonymous name, and their post counts."
-        delete: "Kept: a log entry for each, with their username, groups and counts. Their email and IPs are kept only as scrambled hashes, and the names are removed after the retention period."
+        delete: "Kept: a log entry for each, with their username, groups and counts. Their email and IPs are kept only as salted hashes (pseudonymous, not anonymous), and all of it except the counts is removed after the retention period."
         spammer: "Nothing is deleted. You can restore everything this hides from the member's page."
         suspend: "Nothing is deleted. They can still read, but can't post until the suspension ends."
       gone:
@@ -389,12 +389,13 @@ ernestdefoe-member-desk:
       retention: "Erased members' names are kept for {days} days."
       mirrored: Also written to Flarum's audit log.
       gone: gone
+      hidden_group: a group you can't see
       forever: until lifted
       until: "until {date}"
       spammer: "{posts, plural, one {# post} other {# posts}} and {discussions, plural, one {# discussion} other {# discussions}} hidden, {ips, plural, one {# IP} other {# IPs}} banned"
       restored: restored
       was: "was @{name}"
-      hashes: email and IPs kept as hashes
+      hashes: email and IPs kept as salted hashes (pseudonymous)
       pruned: names removed after the retention period
       rows: "{count, plural, one {# row} other {# rows}}"
       sessions: "{count, plural, one {# session} other {# sessions}}"

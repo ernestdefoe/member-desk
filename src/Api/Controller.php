@@ -53,6 +53,8 @@ class Controller implements RequestHandlerInterface
         protected Bulk $bulk,
         protected Recorder $recorder,
         protected ConnectionInterface $db,
+        protected \ErnestDefoe\MemberDesk\BanIps $bans,
+        protected Log $logPresenter,
     ) {
     }
 
@@ -199,7 +201,7 @@ class Controller implements RequestHandlerInterface
         return [
             'total' => $total,
             'page' => $page,
-            'rows' => $rows->map(fn (AuditEntry $e) => Log::present($e))->all(),
+            'rows' => $rows->map(fn (AuditEntry $e) => $this->logPresenter->present($e, $actor))->all(),
             'retentionDays' => (int) (resolve(\Flarum\Settings\SettingsRepositoryInterface::class)->get('ernestdefoe-member-desk.retention_days') ?: 90),
         ];
     }
@@ -242,20 +244,15 @@ class Controller implements RequestHandlerInterface
         if ($member && ($member->id === $actor->id || $this->access->isAdmin($member))) {
             throw new PermissionDeniedException();
         }
-        if ($this->db->table('access_tokens')->where('user_id', $actor->id)->where('last_ip_address', $ip)->exists()) {
+        if ($this->bans->actorUses($actor, $ip)) {
             throw new ValidationException(['ip' => 'That is one of your own addresses.']);
         }
         if ($this->db->table('banned_ips')->where('address', $ip)->exists()) {
             return null;
         }
 
-        $ban = new \FoF\BanIPs\BannedIP();
-        $ban->creator_id = $actor->id;
-        $ban->address = $ip;
-        $ban->reason = mb_substr(trim((string) ($b['reason'] ?? '')), 0, 190) ?: 'Banned from Member Desk';
-        $ban->user_id = $member?->id;
-        $ban->created_at = Carbon::now();
-        $ban->save();
+        // Through fof/ban-ips' own API: its permission check, validation and hooks decide.
+        $this->bans->ban($actor, $ip, $member?->id, mb_substr(trim((string) ($b['reason'] ?? '')), 0, 190) ?: 'Banned from Member Desk');
 
         $this->recorder->record($actor, 'banIp', $member?->id, null, ['ipHash' => $this->recorder->hash($ip)]);
 

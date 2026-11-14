@@ -164,6 +164,38 @@ class MemberDeskTest extends TestCase
     }
 
     #[Test]
+    public function the_log_shows_a_moderator_only_what_the_list_would(): void
+    {
+        // Moderators lose user.viewLastSeenAt (they have it by default) and have no viewHiddenGroups.
+        $this->db()->table('group_permission')->where('permission', 'user.viewLastSeenAt')->delete();
+        $this->db()->table('groups')->insert(['id' => 11, 'name_singular' => 'Secret', 'name_plural' => 'Secrets', 'is_hidden' => 1]);
+        $this->db()->table('group_user')->insert(['user_id' => 7, 'group_id' => 11]);
+
+        // The admin acts: a group change on the hidden group, and a spammer snapshot of member 7.
+        $this->call('POST', '/run', 1, ['action' => 'addGroup', 'target' => ['ids' => [6]], 'params' => ['group' => 11]]);
+        $this->call('POST', '/run', 1, ['action' => 'suspend', 'target' => ['ids' => [7]], 'params' => ['until' => 3, 'reason' => 'STAFF-ONLY-REASON']]);
+        $this->call('POST', '/run', 1, ['action' => 'spammer', 'target' => ['ids' => [7]]]);
+
+        $this->db()->table('group_permission')->where('permission', 'user.suspend')->delete();
+
+        foreach (['/log', '/members/7', '/members/6'] as $path) {
+            [$status, $mod] = $this->call('GET', $path, 3);
+            $this->assertSame(200, $status);
+            $json = json_encode($path === '/log' ? $mod['rows'] : $mod['log']);
+            $this->assertStringNotContainsString('lastSeenAt', $json, "$path: last seen");
+            $this->assertStringNotContainsString('Secret', $json, "$path: hidden group name");
+            $this->assertStringNotContainsString('"group":11', $json, "$path: hidden group id");
+            $this->assertStringNotContainsString('STAFF-ONLY-REASON', $json, "$path: suspend reason");
+        }
+
+        [, $admin] = $this->call('GET', '/log', 1);
+        $json = json_encode($admin['rows']);
+        $this->assertStringContainsString('lastSeenAt', $json);
+        $this->assertStringContainsString('Secret', $json);
+        $this->assertStringContainsString('STAFF-ONLY-REASON', $json);
+    }
+
+    #[Test]
     public function ip_search_needs_the_ip_permission(): void
     {
         [, $body] = $this->call('GET', '/members?q=198.51.100.23', 3);
