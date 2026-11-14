@@ -173,7 +173,11 @@ class GdprTest extends TestCase
         // formatter XML (rendering those throws "Cannot load XML"), and preferences that aren't JSON.
         $db = $this->app()->getContainer()->make(ConnectionInterface::class);
         $odd = '1000-01-01 00:00:00';
-        $db->table('users')->where('id', 1)->update(['joined_at' => $odd, 'last_seen_at' => $odd, 'marked_all_as_read_at' => $odd]);
+        $db->table('users')->where('id', 1)->update([
+            'joined_at' => $odd, 'last_seen_at' => $odd, 'marked_all_as_read_at' => $odd,
+            // users.email is NOT NULL on every driver, so an import leaves it empty instead.
+            'email' => '', 'avatar_url' => '/uploads/userpics/123/nABC123.jpg',
+        ]);
         if ($db->getDriverName() === 'mysql') {
             $db->statement("SET SESSION sql_mode = ''");
             $db->table('users')->where('id', 1)->update(['joined_at' => '0000-00-00 00:00:00']);
@@ -181,6 +185,9 @@ class GdprTest extends TestCase
         if ($db->getDriverName() === 'sqlite') {
             // MySQL and PostgreSQL JSON columns refuse it, so an import can't have written it there.
             $db->table('users')->where('id', 1)->update(['preferences' => 'not json']);
+            // MySQL and PostgreSQL enforce the group foreign key; SQLite lets an import write it.
+            $db->statement('PRAGMA foreign_keys = OFF');
+            $db->table('group_user')->insert(['user_id' => 1, 'group_id' => 9999]);
         }
         $db->table('posts')->insert([
             ['id' => 10, 'discussion_id' => 1, 'number' => 5, 'user_id' => 1, 'type' => 'comment', 'created_at' => $odd, 'is_private' => 0, 'content' => 'Plain <b>Vanilla</b> & html'],
@@ -192,11 +199,15 @@ class GdprTest extends TestCase
         $body = json_decode((string) $response->getBody(), true);
         $this->assertSame(200, $response->getStatusCode(), substr((string) $response->getBody(), 0, 600));
         $this->assertNull($body['member']['joinedAt'], 'an impossible join date reads as unknown');
+        $this->assertNotContains(9999, $body['member']['groups']);
         $excerpts = array_column($body['activity']['posts'], 'excerpt', 'id');
         $this->assertSame('Plain Vanilla & html', $excerpts[10] ?? null);
         $this->assertNull(array_column($body['activity']['posts'], 'createdAt', 'id')[10]);
 
-        $this->assertSame(200, $this->send($this->request('GET', '/api/member-desk/members', ['authenticatedAs' => 1]))->getStatusCode());
+        $list = $this->send($this->request('GET', '/api/member-desk/members', ['authenticatedAs' => 1]));
+        $this->assertSame(200, $list->getStatusCode());
+        $row = collect(json_decode((string) $list->getBody(), true)['rows'])->firstWhere('id', 1);
+        $this->assertNull($row['joinedAt']);
     }
 
     #[Test]
