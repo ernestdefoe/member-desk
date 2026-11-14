@@ -63,6 +63,9 @@ class Presenter
             'bannedIp' => $banned,
             'isAdmin' => $this->access->isAdmin($m),
             'isYou' => $m->id === $actor->id,
+            // From Reports::addCounts() on the list (null where reports aren't shown to this viewer).
+            'reports' => $m->getAttribute('md_reports_total') === null ? null
+                : ['total' => (int) $m->getAttribute('md_reports_total'), 'open' => (int) $m->getAttribute('md_reports_open')],
         ];
     }
 

@@ -13,6 +13,7 @@
 - **Gates leak if answered.** Email search/sort need viewEmails; IP search and the banned filter need viewIps; last-seen filters/sort need `user.viewLastSeenAt`. A filter the actor can't use is ignored.
 - **Bans only through fof/ban-ips' API** (`BanIps`, via `ApiCall`), never its table: its banIP check, validation and hooks decide. A mod without banIP still marks spammers; their IPs just stay unbanned (`banSkipped`).
 - **The log is filtered per viewer** (`Log::present(entry, viewer)`): last-seen, hidden groups and the suspend reason follow the viewer's own permissions, like the list.
+- **Reports** (`Reports`): Docket (ernestdefoe/docket) first, else flarum/flags counts, else hidden; always through the owner's `whereVisibleTo`, in the column (two correlated subselects on the page query, no extra round trip), the filters and the tab. The list is 6 queries with Docket + tags (tags' permission lookup for Docket's scope), constant in rows.
 - **Spammer is restorable.** Its entry's `after` lists exactly the posts, discussions and IPs it hid/banned; `unspam` undoes only those. Never bans the actor's own IPs or an IP an active member also uses.
 - **List = fixed queries** (5 at 10/50/100 rows, admin and mod). Member page = fixed (23). Keep it that way: no per-row lookups.
 - **Admin-only on install** (Ernest, 2026-11-14): the migration grants no group anything; owners opt moderators in. The showcase stays admin-only (real members); live sites start admin-only.

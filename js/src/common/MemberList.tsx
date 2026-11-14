@@ -15,6 +15,7 @@ const STATUSES: [string, string | null][] = [
   ['anonymized', 'gdpr'],
   ['noposts', null],
   ['banned', 'banIps'],
+  ['reported', 'reports'],
 ];
 
 const BULK = ['addGroup', 'removeGroup', 'suspend', 'confirm', 'spammer', 'anonymize', 'delete'];
@@ -178,7 +179,7 @@ export default class MemberList extends Component {
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.status')}</legend>
-          {STATUSES.filter(([, need]) => !need || ext[need])
+          {STATUSES.filter(([, need]) => !need || (need === 'reports' ? !!meta.reports : ext[need]))
             .filter(([k]) => k !== 'banned' || meta.can.ips)
             .map(([k]) => (
               <label className="MemberDesk-check">
@@ -258,6 +259,37 @@ export default class MemberList extends Component {
                   onchange={(e: Event) => this.date('seenTo', (e.target as HTMLInputElement).value)}
                 />
               </label>
+            </div>
+          </fieldset>
+        ) : null}
+
+        {meta.reports ? (
+          <fieldset className="MemberDesk-fgroup">
+            <legend>{t('filters.reported')}</legend>
+            <div className="MemberDesk-range">
+              <label>
+                <span>{t('filters.reported_min')}</span>
+                <input
+                  type="number"
+                  min="1"
+                  inputmode="numeric"
+                  className="FormControl"
+                  value={f.reportedMin}
+                  onchange={(e: Event) => s.setFilter('reportedMin', (e.target as HTMLInputElement).value)}
+                />
+              </label>
+            </div>
+            <div className="MemberDesk-presets MemberDesk-presets--after">
+              {['P7D', 'P30D', 'P90D', ''].map((p) => (
+                <button
+                  type="button"
+                  className={`MemberDesk-preset${f.reportedWithin === p ? ' is-on' : ''}`}
+                  aria-pressed={f.reportedWithin === p ? 'true' : 'false'}
+                  onclick={() => s.setFilter('reportedWithin', p)}
+                >
+                  {t(`filters.reported_within_${p || 'ever'}`)}
+                </button>
+              ))}
             </div>
           </fieldset>
         ) : null}
@@ -376,6 +408,15 @@ export default class MemberList extends Component {
     if (f.seenTo) chips.push(['st', t('chips.seen_to', { date: date(f.seenTo) }), () => s.setFilter('seenTo', '')]);
     if (f.minPosts !== '') chips.push(['mn', t('chips.min_posts', { count: f.minPosts }), () => s.setFilter('minPosts', '')]);
     if (f.maxPosts !== '') chips.push(['mx', t('chips.max_posts', { count: f.maxPosts }), () => s.setFilter('maxPosts', '')]);
+    if (f.reportedMin !== '')
+      chips.push([
+        'rm',
+        t(`chips.reported_${f.reportedWithin || 'ever'}`, { count: f.reportedMin }),
+        () => {
+          s.filters.reportedWithin = '';
+          s.setFilter('reportedMin', '');
+        },
+      ]);
 
     return (
       <div className="MemberDesk-chips" aria-live="polite">
@@ -460,10 +501,11 @@ export default class MemberList extends Component {
               {this.sortHeader('username', ts('col.member'))}
               {this.sortHeader(can.emails ? 'email' : null, ts('col.email'))}
               {this.sortHeader(null, ts('col.groups'))}
-              {this.sortHeader('joinedAt', ts('col.joined'))}
+              {this.sortHeader('joinedAt', ts('col.joined'), 'MemberDesk-colMid')}
               {this.sortHeader(can.lastSeen ? 'lastSeenAt' : null, ts('col.seen'))}
               {this.sortHeader('posts', ts('col.posts'), 'is-num')}
               {this.sortHeader('discussions', ts('col.discussions'), 'is-num MemberDesk-colWide')}
+              {s.meta!.reports ? this.sortHeader(null, ts('col.reports'), 'is-num') : null}
               {can.ips ? this.sortHeader(null, ts('col.ip'), 'MemberDesk-colWide') : null}
               {this.sortHeader(null, ts('col.status'))}
             </tr>
@@ -493,7 +535,7 @@ export default class MemberList extends Component {
                   {r.confirmed ? null : <Icon name="far fa-envelope" className="MemberDesk-unverifiedIcon" aria-label={ts('status.unconfirmed')} />}
                 </td>
                 <td className="MemberDesk-groups">{this.groupList(r)}</td>
-                <td className="MemberDesk-muted" title={r.joinedAt || ''}>
+                <td className="MemberDesk-muted MemberDesk-colMid" title={r.joinedAt || ''}>
                   {date(r.joinedAt)}
                 </td>
                 <td className="MemberDesk-muted" title={r.lastSeenAt || ''}>
@@ -501,13 +543,14 @@ export default class MemberList extends Component {
                 </td>
                 <td className="is-num">{num(r.posts)}</td>
                 <td className="is-num MemberDesk-colWide">{num(r.discussions)}</td>
+                {s.meta!.reports ? <td className="is-num">{this.reportCell(r)}</td> : null}
                 {can.ips ? <td className="MemberDesk-mono MemberDesk-muted MemberDesk-colWide">{r.lastIp || '—'}</td> : null}
                 <td className="MemberDesk-status">{statusPills(r, true)}</td>
               </tr>
             ))}
             {!s.rows.length && !s.loading ? (
               <tr>
-                <td colSpan={10} className="MemberDesk-empty">
+                <td colSpan={11} className="MemberDesk-empty">
                   {t('list.empty')}
                 </td>
               </tr>
@@ -515,6 +558,18 @@ export default class MemberList extends Component {
           </tbody>
         </table>
       </div>
+    );
+  }
+
+  reportCell(r: Row): Mithril.Children {
+    if (!r.reports || !r.reports.total) return <span className="MemberDesk-faint">0</span>;
+    const label = ts('list.reports_title', { total: r.reports.total, open: r.reports.open });
+    return (
+      <span className={`MemberDesk-reports${r.reports.open ? ' is-open' : ''}`} title={label} aria-label={label}>
+        {r.reports.open ? <Icon name="fas fa-flag" /> : null}
+        {num(r.reports.total)}
+        {r.reports.open ? <span className="MemberDesk-reportsOpen">{r.reports.open}</span> : null}
+      </span>
     );
   }
 

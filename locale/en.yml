@@ -35,6 +35,7 @@ ernestdefoe-member-desk:
       anonymized: Anonymized
       banned_ip: Banned IP
       unconfirmed: Not verified
+      open_reports: "{count, plural, one {# open report} other {# open reports}}"
       suspended_forever: Suspended
       suspended_until: "Suspended until {date}"
 
@@ -68,6 +69,8 @@ ernestdefoe-member-desk:
       card_posts: "{count, plural, one {# post} other {# posts}}"
       card_joined: "Joined {date}"
       card_seen: "Seen {ago}"
+      reports_open: "{count} open"
+      reports_title: "{total, plural, one {# report} other {# reports}} against this member, {open} still open"
 
     col:
       member: Member
@@ -78,6 +81,7 @@ ernestdefoe-member-desk:
       posts: Posts
       discussions: Discussions
       ip: Last IP
+      reports: Reports
       status: Status
 
     sort:
@@ -112,6 +116,13 @@ ernestdefoe-member-desk:
       status_anonymized: Anonymized
       status_noposts: Never posted
       status_banned: Banned IP
+      status_reported: Has open reports
+      reported: Reported
+      reported_min: At least this many times
+      reported_within_P7D: in 7 days
+      reported_within_P30D: in 30 days
+      reported_within_P90D: in 90 days
+      reported_within_ever: ever
       joined: Joined
       seen: Last seen
       posts: Posts
@@ -145,6 +156,10 @@ ernestdefoe-member-desk:
       seen_to: "Seen until {date}"
       min_posts: "At least {count} posts"
       max_posts: "At most {count} posts"
+      reported_P7D: "Reported {count}+ times in 7 days"
+      reported_P30D: "Reported {count}+ times in 30 days"
+      reported_P90D: "Reported {count}+ times in 90 days"
+      reported_ever: "Reported {count}+ times"
       remove: Remove this filter
       clear: Clear all
 
@@ -279,6 +294,7 @@ ernestdefoe-member-desk:
       profile: Profile
       groups: Groups
       activity: Activity
+      reports: Reports
       ips: IPs & other accounts
       notes: Notes
       warnings: Warnings & suspensions
@@ -319,6 +335,23 @@ ernestdefoe-member-desk:
       no_sessions: Not signed in anywhere.
       unknown_device: Unknown device
       last_used: "last used {ago}"
+
+    reports:
+      against_title: "{count, plural, one {# report about this member} other {# reports about this member}}"
+      filed_title: Reports this member filed
+      flags_only: "From Flags. Install Docket to see each report's status, who handles it and the outcome."
+      none_against: Nobody has reported this member.
+      none_filed: This member hasn't reported anything.
+      no_post: (post no longer there)
+      reporters: "{count, plural, one {# person reported it} other {# people reported it}}"
+      reason: "Reason: {reason}"
+      assignee: "Handled by {name}"
+      about: "About {name}"
+      outcome: "Outcome: {outcome}"
+      status_open: Open
+      status_in_progress: In progress
+      status_resolved: Resolved
+      status_rejected: Rejected
 
     ips:
       title: IP addresses

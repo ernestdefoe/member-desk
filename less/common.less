@@ -1589,6 +1589,13 @@ html[data-theme^='dark'] .MemberDeskConfirm {
   }
 }
 
+// Then the join date (it's on the member page and the phone cards).
+@container deskmain (max-width: 1020px) {
+  .MemberDesk-colMid {
+    display: none;
+  }
+}
+
 @container desk (max-width: 900px) {
   .MemberDesk-tableWrap {
     display: none;
@@ -1687,4 +1694,41 @@ html[data-theme^='dark'] .MemberDeskConfirm {
 // Dates need room for the browser's "mm/dd/yyyy" and its calendar button.
 .MemberDesk-range--dates {
   grid-template-columns: minmax(0, 1fr);
+}
+
+// Reports (Docket or flags)
+.MemberDesk-reportHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.MemberDesk-reports {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 650;
+
+  &.is-open {
+    color: var(--md-warn);
+  }
+  .icon {
+    font-size: 11px;
+  }
+}
+
+.MemberDesk-reportsOpen {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--md-warn-bg);
+  color: var(--md-warn);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.MemberDesk-presets--after {
+  margin: 6px 0 0;
 }

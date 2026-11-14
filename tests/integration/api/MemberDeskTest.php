@@ -128,6 +128,8 @@ class MemberDeskTest extends TestCase
 
         [, $body] = $this->call('GET', '/members?q=quiet', 3);
         $this->assertSame('q•••@machine.local', $body['rows'][0]['email']);
+        // No flags and no Docket here: no report column, no Reports tab.
+        $this->assertNull($body['rows'][0]['reports']);
 
         // Searching an email fragment must not answer for a moderator (it would leak the address).
         [, $body] = $this->call('GET', '/members?q=machine.local', 3);

@@ -57,6 +57,16 @@ class Optional
         return $this->on('fof-masquerade');
     }
 
+    public function docket(): bool
+    {
+        return $this->on('ernestdefoe-docket') && class_exists(\ErnestDefoe\Docket\Report::class);
+    }
+
+    public function flags(): bool
+    {
+        return $this->on('flarum-flags') && class_exists(\Flarum\Flags\Flag::class);
+    }
+
     public function likes(): bool
     {
         return $this->on('flarum-likes');
@@ -74,6 +84,8 @@ class Optional
             'warnings' => $this->warnings(),
             'masquerade' => $this->masquerade(),
             'likes' => $this->likes(),
+            'docket' => $this->docket(),
+            'flags' => $this->flags(),
         ];
     }
 }

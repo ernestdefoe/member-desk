@@ -12,6 +12,8 @@ export interface Filters {
   notSeenFor: string;
   minPosts: string;
   maxPosts: string;
+  reportedMin: string;
+  reportedWithin: string;
 }
 
 export interface SavedFilter {
@@ -29,6 +31,8 @@ export interface Meta {
   can: Record<string, boolean>;
   filters: SavedFilter[];
   gdprDeletionOff: boolean;
+  /** Where report counts come from for this viewer: Docket, flarum/flags, or nothing. */
+  reports: 'docket' | 'flags' | null;
 }
 
 export const emptyFilters = (): Filters => ({
@@ -43,6 +47,8 @@ export const emptyFilters = (): Filters => ({
   notSeenFor: '',
   minPosts: '',
   maxPosts: '',
+  reportedMin: '',
+  reportedWithin: '',
 });
 
 /**
@@ -112,7 +118,8 @@ export default class DeskState {
     return (
       f.groups.length +
       f.status.length +
-      [f.joinedFrom, f.joinedTo, f.seenFrom, f.seenTo, f.joinedWithin, f.notSeenFor, f.minPosts, f.maxPosts].filter((v) => v !== '').length
+      [f.joinedFrom, f.joinedTo, f.seenFrom, f.seenTo, f.joinedWithin, f.notSeenFor, f.minPosts, f.maxPosts, f.reportedMin].filter((v) => v !== '')
+        .length
     );
   }
 

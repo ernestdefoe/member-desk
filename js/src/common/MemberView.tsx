@@ -15,7 +15,7 @@ export interface MemberViewAttrs extends ComponentAttrs {
   id: number;
 }
 
-const TABS = ['profile', 'groups', 'activity', 'ips', 'notes', 'warnings', 'log'];
+const TABS = ['profile', 'groups', 'activity', 'reports', 'ips', 'notes', 'warnings', 'log'];
 
 /**
  * One member, everything about them: a hero with who they are and where they stand (status,
@@ -146,6 +146,7 @@ export default class MemberView extends Component<MemberViewAttrs> {
       ['groups', t('tab.groups'), d.member.groups.length || null],
       ['activity', t('tab.activity'), null],
     ];
+    if (d.reports) list.push(['reports', t('tab.reports'), d.reports.open || null]);
     if (d.ips !== null) list.push(['ips', t('tab.ips'), d.ips.some((i: any) => i.others.length) ? <Icon name="fas fa-user-group" /> : null]);
     if (d.notes !== null) list.push(['notes', t('tab.notes'), d.notes.items.length || null]);
     list.push(['warnings', t('tab.warnings'), d.warnings?.strikes || (d.member.suspendedUntil ? '!' : null)]);
@@ -420,6 +421,8 @@ export default class MemberView extends Component<MemberViewAttrs> {
         return this.groupsTab();
       case 'activity':
         return this.activityTab();
+      case 'reports':
+        return this.reportsTab();
       case 'ips':
         return this.ipsTab();
       case 'notes':
@@ -611,6 +614,106 @@ export default class MemberView extends Component<MemberViewAttrs> {
               {t('member.sign_out')}
             </Button>
           ) : null}
+        </section>
+      </div>
+    );
+  }
+
+  reportsTab() {
+    const r = this.data.reports;
+    const docket = r.source === 'docket';
+    const base = app.forum.attribute<string>('baseUrl');
+    const link = (x: any) =>
+      docket && (x.id || x.reportId)
+        ? `${base}/reports/${x.id || x.reportId}`
+        : x.discussionId
+          ? desk().discussion(x.discussionId, x.slug, x.number)
+          : null;
+    const target = desk().admin ? '_blank' : undefined;
+    const status = (st: string | null) =>
+      st ? (
+        <span
+          className={`MemberDesk-pill MemberDesk-pill--${{ open: 'warn', in_progress: 'info', resolved: 'ok', rejected: 'muted' }[st] || 'muted'}`}
+        >
+          {t(`reports.status_${st}`)}
+        </span>
+      ) : null;
+
+    return (
+      <div className="MemberDesk-grid">
+        <section className="MemberDesk-card MemberDesk-card--wide">
+          <h3>
+            {t('reports.against_title', { count: r.total })} <span className="MemberDesk-ext">{docket ? 'ernestdefoe/docket' : 'flarum/flags'}</span>
+          </h3>
+          {!docket ? <p className="helpText">{t('reports.flags_only')}</p> : null}
+          {r.against.length ? (
+            <ul className="MemberDesk-list">
+              {r.against.map((x: any) => {
+                const href = link(x);
+                return (
+                  <li>
+                    <span className="MemberDesk-reportHead">
+                      {status(x.status)}
+                      {href ? (
+                        <a href={href} target={target} rel="noopener">
+                          {x.discussion || t('reports.no_post')}
+                        </a>
+                      ) : (
+                        <span>{x.discussion || t('reports.no_post')}</span>
+                      )}
+                    </span>
+                    <span className="MemberDesk-muted">
+                      {[
+                        x.reports ? ts('reports.reporters', { count: x.reports }) : x.reason ? ts('reports.reason', { reason: x.reason }) : null,
+                        x.assignee ? ts('reports.assignee', { name: x.assignee }) : null,
+                        ago(x.createdAt),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    {x.outcome ? <span className="MemberDesk-excerpt">{t('reports.outcome', { outcome: x.outcome })}</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="MemberDesk-faint">{t('reports.none_against')}</p>
+          )}
+        </section>
+        <section className="MemberDesk-card MemberDesk-card--wide">
+          <h3>{t('reports.filed_title')}</h3>
+          {r.filed.length ? (
+            <ul className="MemberDesk-list">
+              {r.filed.map((x: any) => {
+                const href = link(x);
+                return (
+                  <li>
+                    <span className="MemberDesk-reportHead">
+                      {status(x.status)}
+                      {href ? (
+                        <a href={href} target={target} rel="noopener">
+                          {x.discussion || t('reports.no_post')}
+                        </a>
+                      ) : (
+                        <span>{x.discussion || t('reports.no_post')}</span>
+                      )}
+                    </span>
+                    <span className="MemberDesk-muted">
+                      {[
+                        x.about ? ts('reports.about', { name: x.about }) : null,
+                        x.reason ? ts('reports.reason', { reason: x.reason }) : null,
+                        ago(x.createdAt),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="MemberDesk-faint">{t('reports.none_filed')}</p>
+          )}
         </section>
       </div>
     );

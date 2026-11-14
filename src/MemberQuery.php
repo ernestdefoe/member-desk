@@ -33,6 +33,7 @@ class MemberQuery
         protected Access $access,
         protected Optional $optional,
         protected ConnectionInterface $db,
+        protected Reports $reports,
     ) {
     }
 
@@ -92,6 +93,8 @@ class MemberQuery
                 $query->where(fn (Builder $w) => $w->where('last_seen_at', '<', $cut)->orWhereNull('last_seen_at'));
             }
         }
+
+        $this->reports->filter($query, $actor, $f);
 
         $min = Arr::get($f, 'minPosts');
         if (is_numeric($min)) {

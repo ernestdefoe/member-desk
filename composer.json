@@ -40,7 +40,9 @@
         "fof/ban-ips": "Filter by banned IP, ban an IP from the member page, and ban a spammer's IPs",
         "fof/moderator-notes": "Private staff notes on the member page",
         "fof/moderator-warnings": "Warnings and strikes on the member page",
-        "fof/masquerade": "Custom profile fields on the member page"
+        "fof/masquerade": "Custom profile fields on the member page",
+        "ernestdefoe/docket": "Reports about a member on their page and in the list: status, assignee and outcome from Docket's report centre",
+        "flarum/flags": "Report counts in the list and on the member page (Docket adds statuses)"
     },
     "autoload": {
         "psr-4": {
@@ -68,12 +70,16 @@
                 "fof/ban-ips",
                 "fof/moderator-notes",
                 "fof/moderator-warnings",
-                "fof/masquerade"
+                "fof/masquerade",
+                "flarum/flags",
+                "ernestdefoe/docket"
             ]
         }
     },
     "require-dev": {
+        "ernestdefoe/docket": "^1.4",
         "flarum/audit": "^2.0",
+        "flarum/flags": "^2.0",
         "flarum/gdpr": "^2.0",
         "flarum/phpstan": "^2.0",
         "flarum/suspend": "^2.0",

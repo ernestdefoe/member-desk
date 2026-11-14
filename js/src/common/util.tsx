@@ -68,6 +68,8 @@ export interface Row {
   bannedIp: boolean;
   isAdmin: boolean;
   isYou: boolean;
+  /** Reports against this member (Docket, or flarum/flags counts); null when not shown. */
+  reports: { total: number; open: number } | null;
 }
 
 export interface GroupInfo {
@@ -118,6 +120,14 @@ export function statusPills(r: Row, compact = false): Mithril.Children {
       <span className="MemberDesk-pill MemberDesk-pill--warn">
         <Icon name="far fa-envelope" />
         {t('status.unconfirmed')}
+      </span>
+    );
+  }
+  if (r.reports?.open) {
+    out.push(
+      <span className="MemberDesk-pill MemberDesk-pill--warn">
+        <Icon name="fas fa-flag" />
+        {t('status.open_reports', { count: r.reports.open })}
       </span>
     );
   }

@@ -23,6 +23,7 @@ class MemberDetail
         protected Presenter $presenter,
         protected ConnectionInterface $db,
         protected Log $logPresenter,
+        protected Reports $reports,
     ) {
     }
 
@@ -45,8 +46,13 @@ class MemberDetail
             'suspension' => $this->suspension($m),
             'log' => $this->log($actor, $m),
             'erasure' => $this->erasure($m),
+            'reports' => $this->reports->detail($actor, $m),
             'can' => $this->can($actor, $m),
         ];
+
+        if ($out['reports'] !== null) {
+            $out['member']['reports'] = ['total' => $out['reports']['total'], 'open' => $out['reports']['open']];
+        }
 
         return $out;
     }

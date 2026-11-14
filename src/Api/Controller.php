@@ -55,6 +55,7 @@ class Controller implements RequestHandlerInterface
         protected ConnectionInterface $db,
         protected \ErnestDefoe\MemberDesk\BanIps $bans,
         protected Log $logPresenter,
+        protected \ErnestDefoe\MemberDesk\Reports $reports,
     ) {
     }
 
@@ -98,6 +99,7 @@ class Controller implements RequestHandlerInterface
         $total = (clone $query)->toBase()->getCountForPagination();
 
         $this->query->sort($query, $actor, $params['sort'] ?? null, $params['dir'] ?? null);
+        $this->reports->addCounts($query, $actor);
         $members = $query->with('groups')->forPage($page, $perPage)->get();
 
         return [
@@ -120,6 +122,7 @@ class Controller implements RequestHandlerInterface
             'groups' => $groups,
             'extensions' => $this->optional->all(),
             'can' => $this->access->forActor($actor) + ['lastSeen' => $this->access->lastSeen($actor)],
+            'reports' => $this->reports->source($actor),
             'filters' => $this->filterList($actor),
             'gdprDeletionOff' => $this->optional->gdpr() && ! $this->access->gdprAllows('deletion'),
         ];
@@ -328,7 +331,7 @@ class Controller implements RequestHandlerInterface
             $f->name = $name;
         }
         if (! $partial || array_key_exists('query', $b)) {
-            $q = Arr::only((array) ($b['query'] ?? []), ['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts', 'sort', 'dir']);
+            $q = Arr::only((array) ($b['query'] ?? []), ['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts', 'reportedMin', 'reportedWithin', 'sort', 'dir']);
             $f->query = json_encode($q) ?: '{}';
         }
         if (array_key_exists('shared', $b)) {
