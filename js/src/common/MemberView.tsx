@@ -5,6 +5,7 @@ import Dropdown from 'flarum/common/components/Dropdown';
 import Icon from 'flarum/common/components/Icon';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import Tooltip from 'flarum/common/components/Tooltip';
+import ItemList from 'flarum/common/utils/ItemList';
 import stringToColor from 'flarum/common/utils/stringToColor';
 import type Mithril from 'mithril';
 import ConfirmModal, { reportRun } from './ConfirmModal';
@@ -220,23 +221,7 @@ export default class MemberView extends Component<MemberViewAttrs> {
             </div>
           </div>
           <div className="MemberDesk-heroActions">
-            {r.anonymized ? null : (
-              <a className="Button" href={desk().profile(r.username)} target={desk().admin ? '_blank' : undefined} rel="noopener">
-                <Icon name="far fa-user" className="Button-icon" />
-                <span className="Button-label">{t('member.view_profile')}</span>
-              </a>
-            )}
-            {r.suspendedUntil ? (
-              can.unsuspend ? (
-                <Button className="Button" icon="fas fa-unlock" loading={this.busy === 'unsuspend'} onclick={() => this.quick('unsuspend')}>
-                  {t('member.unsuspend')}
-                </Button>
-              ) : null
-            ) : can.suspend ? (
-              <Button className="Button" icon="fas fa-ban" onclick={() => this.confirmAction('suspend')}>
-                {t('member.suspend')}
-              </Button>
-            ) : null}
+            {this.heroActions(r, can).toArray()}
             {this.moreMenu()}
           </div>
         </div>
@@ -280,6 +265,44 @@ export default class MemberView extends Component<MemberViewAttrs> {
         </dl>
       </header>
     );
+  }
+
+  /**
+   * The buttons in the member page header, as an ItemList so other extensions can add their own
+   * (e.g. a link to that member's permissions).
+   */
+  heroActions(r: any, can: Record<string, boolean>): ItemList<Mithril.Children> {
+    const items = new ItemList<Mithril.Children>();
+    if (!r.anonymized) {
+      items.add(
+        'profile',
+        <a className="Button" href={desk().profile(r.username)} target={desk().admin ? '_blank' : undefined} rel="noopener">
+          <Icon name="far fa-user" className="Button-icon" />
+          <span className="Button-label">{t('member.view_profile')}</span>
+        </a>,
+        100
+      );
+    }
+    if (r.suspendedUntil) {
+      if (can.unsuspend) {
+        items.add(
+          'unsuspend',
+          <Button className="Button" icon="fas fa-unlock" loading={this.busy === 'unsuspend'} onclick={() => this.quick('unsuspend')}>
+            {t('member.unsuspend')}
+          </Button>,
+          50
+        );
+      }
+    } else if (can.suspend) {
+      items.add(
+        'suspend',
+        <Button className="Button" icon="fas fa-ban" onclick={() => this.confirmAction('suspend')}>
+          {t('member.suspend')}
+        </Button>,
+        50
+      );
+    }
+    return items;
   }
 
   moreMenu(): Mithril.Children {
