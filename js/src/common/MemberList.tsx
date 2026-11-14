@@ -568,7 +568,7 @@ export default class MemberList extends Component {
       <span className={`MemberDesk-reports${r.reports.open ? ' is-open' : ''}`} title={label} aria-label={label}>
         {r.reports.open ? <Icon name="fas fa-flag" /> : null}
         {num(r.reports.total)}
-        {r.reports.open ? <span className="MemberDesk-reportsOpen">{r.reports.open}</span> : null}
+        {r.reports.open && r.reports.open !== r.reports.total ? <span className="MemberDesk-reportsOpen">{r.reports.open}</span> : null}
       </span>
     );
   }
