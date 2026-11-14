@@ -141,6 +141,24 @@ class GdprTest extends TestCase
     }
 
     #[Test]
+    public function the_installer_admins_own_member_page_opens(): void
+    {
+        // JoZ3 (Discuss d/40368/5): GET /api/member-desk/members/1 500'd for the first admin.
+        // Excerpts come from the stored XML, never rendered: a tag no installed extension renders
+        // (here an upload preview) must not reach any formatter code.
+        $this->app()->getContainer()->make(ConnectionInterface::class)->table('posts')->insert([
+            'id' => 9, 'discussion_id' => 1, 'number' => 4, 'user_id' => 1, 'type' => 'comment', 'created_at' => Carbon::now(), 'is_private' => 0,
+            'content' => '<r><p>Setup <UPL-IMAGE-PREVIEW url="https://x.test/a.png"><s>[upl-image-preview url=https://x.test/a.png]</s></UPL-IMAGE-PREVIEW> done <USERMENTION displayname="target" id="4">@"target"#4</USERMENTION></p></r>',
+        ]);
+        $body = json_decode((string) $this->send($this->request('GET', '/api/member-desk/members/1', ['authenticatedAs' => 1]))->getBody(), true);
+        $this->assertSame('Setup done @target', $body['activity']['posts'][0]['excerpt'] ?? '', json_encode($body['activity'] ?? null));
+        foreach ([1, 4] as $id) {
+            $response = $this->send($this->request('GET', "/api/member-desk/members/$id", ['authenticatedAs' => 1]));
+            $this->assertSame(200, $response->getStatusCode(), "member $id: ".substr((string) $response->getBody(), 0, 600));
+        }
+    }
+
+    #[Test]
     public function a_fresh_install_is_admin_only(): void
     {
         // Ernest, 2026-11-14: no group gets Member Desk until a forum owner grants it.

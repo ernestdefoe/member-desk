@@ -9,6 +9,7 @@ use Flarum\Post\CommentPost;
 use Flarum\Post\Post;
 use Flarum\User\User;
 use Illuminate\Database\ConnectionInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Everything the member page shows, in one payload. Each optional extension's section is only
@@ -24,29 +25,53 @@ class MemberDetail
         protected ConnectionInterface $db,
         protected Log $logPresenter,
         protected Reports $reports,
+        protected LoggerInterface $log,
     ) {
+    }
+
+    /**
+     * One section of the page. A section that reads another extension's data (its tables, its
+     * formatter) must never take the whole page down: if it throws, the page still opens without
+     * it and the error is logged with the member and the section, so it can be fixed.
+     *
+     * @template T
+     * @param callable(): T $read
+     * @param T $fallback
+     * @return T
+     */
+    protected function section(string $name, User $m, callable $read, mixed $fallback): mixed
+    {
+        try {
+            return $read();
+        } catch (\Throwable $e) {
+            $this->log->error("[member-desk] the {$name} section failed for member {$m->id}: ".$e->getMessage(), ['exception' => $e]);
+
+            return $fallback;
+        }
     }
 
     /** @return array<string, mixed> */
     public function build(User $actor, User $m): array
     {
         $m->loadMissing('groups');
-        $ips = $this->access->ips($actor) ? $this->ips($m) : null;
+        $ips = $this->access->ips($actor) ? $this->section('ips', $m, fn () => $this->ips($m), []) : null;
         $lastIp = $this->access->ips($actor) ? ($this->presenter->lastIps([$m->id])[$m->id] ?? null) : null;
         $banned = $ips !== null && collect($ips)->contains('banned', true);
 
         $out = [
             'member' => $this->presenter->row($actor, $m, $lastIp, $banned),
-            'profile' => $this->profile($m),
-            'activity' => $this->activity($actor, $m),
-            'sessions' => $this->sessions($actor, $m),
+            'profile' => $this->section('profile', $m, fn () => $this->profile($m),
+                ['bio' => null, 'locale' => null, 'discloseOnline' => false, 'fields' => [], 'masquerade' => false]),
+            'activity' => $this->section('activity', $m, fn () => $this->activity($actor, $m),
+                ['months' => [], 'posts' => [], 'discussions' => [], 'likes' => null]),
+            'sessions' => $this->section('sessions', $m, fn () => $this->sessions($actor, $m), []),
             'ips' => $ips,
-            'notes' => $this->notes($actor, $m),
-            'warnings' => $this->warnings($actor, $m),
-            'suspension' => $this->suspension($m),
-            'log' => $this->log($actor, $m),
-            'erasure' => $this->erasure($m),
-            'reports' => $this->reports->detail($actor, $m),
+            'notes' => $this->section('notes', $m, fn () => $this->notes($actor, $m), null),
+            'warnings' => $this->section('warnings', $m, fn () => $this->warnings($actor, $m), null),
+            'suspension' => $this->section('suspension', $m, fn () => $this->suspension($m), null),
+            'log' => $this->section('log', $m, fn () => $this->log($actor, $m), []),
+            'erasure' => $this->section('erasure', $m, fn () => $this->erasure($m), null),
+            'reports' => $this->section('reports', $m, fn () => $this->reports->detail($actor, $m), null),
             'can' => $this->can($actor, $m),
         ];
 
@@ -130,7 +155,7 @@ class MemberDetail
                 'discussionId' => $p->discussion_id,
                 'discussion' => $p->discussion?->title,
                 'slug' => $p->discussion?->slug,
-                'excerpt' => mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags((string) $p->formatContent())) ?? ''), 0, 140),
+                'excerpt' => $this->excerpt($p),
                 'createdAt' => $p->created_at?->toIso8601String(),
             ])->all(),
             'discussions' => $discussions->map(fn (Discussion $d) => [
@@ -142,6 +167,25 @@ class MemberDetail
             ])->all(),
             'likes' => $likes,
         ];
+    }
+
+    /**
+     * Plain text from the STORED post, without rendering it. Rendering runs every installed
+     * extension's formatter code (uploads, mentions, custom BBCode), and some of it expects a
+     * web request and throws without one (JoZ3, Discuss d/40368/5: the first admin's page 500'd).
+     */
+    protected function excerpt(Post $p): string
+    {
+        $xml = (string) $p->getRawOriginal('content');
+        // Mentions store their source (@"Name"#p12); show them as the post does, @Name.
+        $xml = preg_replace('#<(USER|POST)MENTION\b[^>]*?\bdisplayname="([^"]*)"[^>]*>.*?</\1MENTION>#s', '@$2', $xml) ?? $xml;
+        try {
+            $text = \s9e\TextFormatter\Utils::removeFormatting($xml);
+        } catch (\Throwable) {
+            $text = strip_tags($xml);
+        }
+
+        return mb_substr(trim(preg_replace('/\s+/', ' ', $text) ?? ''), 0, 140);
     }
 
     /** @return array<int, array<string, mixed>> */
