@@ -9,7 +9,7 @@ import stringToColor from 'flarum/common/utils/stringToColor';
 import type Mithril from 'mithril';
 import ConfirmModal, { reportRun } from './ConfirmModal';
 import { deskState } from './DeskState';
-import { ago, api, avatar, date, dayjs, desk, errorText, groupChip, isForever, num, statusPills, t, ts, type GroupInfo } from './util';
+import { ago, api, avatar, date, dayjs, desk, errorText, groupChip, isForever, num, statusPills, t, trustPill, ts, type GroupInfo } from './util';
 
 export interface MemberViewAttrs extends ComponentAttrs {
   id: number;
@@ -216,6 +216,7 @@ export default class MemberView extends Component<MemberViewAttrs> {
             <div className="MemberDesk-heroBadges">
               {r.groups.map((id: number) => groupChip(this.group(id)))}
               {statusPills(r)}
+              {trustPill(r, d.meta.trustLevels)}
             </div>
           </div>
           <div className="MemberDesk-heroActions">
@@ -464,6 +465,17 @@ export default class MemberView extends Component<MemberViewAttrs> {
             </dd>
             <dt>{t('profile.seen')}</dt>
             <dd>{r.lastSeenAt ? `${date(r.lastSeenAt)} (${ago(r.lastSeenAt)})` : t('list.hidden')}</dd>
+            {r.trust
+              ? [
+                  <dt>{t('profile.trust')}</dt>,
+                  <dd>
+                    {trustPill(r, d.meta.trustLevels)} {r.trust.locked ? <span className="MemberDesk-muted">{t('trust.locked')}</span> : null}{' '}
+                    <a href={desk().profile(r.username) + '/trust'} target={desk().admin ? '_blank' : undefined} rel="noopener">
+                      {t('trust.open')}
+                    </a>
+                  </dd>,
+                ]
+              : null}
             <dt>{t('profile.online_status')}</dt>
             <dd>{p.discloseOnline ? t('profile.online_shown') : t('profile.online_hidden')}</dd>
             {p.locale ? [<dt>{t('profile.locale')}</dt>, <dd>{p.locale}</dd>] : null}

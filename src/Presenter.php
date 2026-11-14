@@ -63,6 +63,11 @@ class Presenter
             'bannedIp' => $banned,
             'isAdmin' => $this->access->isAdmin($m),
             'isYou' => $m->id === $actor->id,
+            'trust' => $this->access->trust($actor) ? [
+                'level' => (int) $m->getAttribute('trust_level'),
+                'locked' => (bool) $m->getAttribute('trust_locked'),
+                'silenced' => (bool) $m->getAttribute('trust_silenced_at'),
+            ] : null,
             // From Reports::addCounts() on the list (null where reports aren't shown to this viewer).
             'reports' => $m->getAttribute('md_reports_total') === null ? null
                 : ['total' => (int) $m->getAttribute('md_reports_total'), 'open' => (int) $m->getAttribute('md_reports_open')],

@@ -123,6 +123,9 @@ class Controller implements RequestHandlerInterface
             'extensions' => $this->optional->all(),
             'can' => $this->access->forActor($actor) + ['lastSeen' => $this->access->lastSeen($actor)],
             'reports' => $this->reports->source($actor),
+            'trustLevels' => $this->access->trust($actor)
+                ? array_map(fn ($l) => ['level' => $l, 'name' => resolve(\ErnestDefoe\TrustLevels\Names::class)->name($l)], range(0, 4))
+                : null,
             'filters' => $this->filterList($actor),
             'gdprDeletionOff' => $this->optional->gdpr() && ! $this->access->gdprAllows('deletion'),
         ];
@@ -331,7 +334,7 @@ class Controller implements RequestHandlerInterface
             $f->name = $name;
         }
         if (! $partial || array_key_exists('query', $b)) {
-            $q = Arr::only((array) ($b['query'] ?? []), ['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts', 'reportedMin', 'reportedWithin', 'sort', 'dir']);
+            $q = Arr::only((array) ($b['query'] ?? []), ['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts', 'reportedMin', 'reportedWithin', 'trust', 'sort', 'dir']);
             $f->query = json_encode($q) ?: '{}';
         }
         if (array_key_exists('shared', $b)) {

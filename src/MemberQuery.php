@@ -77,6 +77,7 @@ class MemberQuery
                 'suspended' => $this->optional->suspend() ? $query->where('suspended_until', '>', Carbon::now()) : null,
                 'anonymized' => $this->optional->gdpr() ? $query->where('anonymized', true) : null,
                 'banned' => $this->optional->banIps() && $this->access->ips($actor) ? $this->banned($query) : null,
+                'silenced' => $this->access->trust($actor) ? $query->whereNotNull('trust_silenced_at') : null,
                 default => null,
             };
         }
@@ -95,6 +96,12 @@ class MemberQuery
         }
 
         $this->reports->filter($query, $actor, $f);
+
+        // Trust levels 0–4, only for staff Trust Levels lets see them.
+        $levels = array_values(array_unique(array_filter(array_map('intval', array_filter((array) Arr::get($f, 'trust', []), 'is_numeric')), fn ($l) => $l >= 0 && $l <= 4)));
+        if ($levels && $this->access->trust($actor)) {
+            $query->whereIn('trust_level', $levels);
+        }
 
         $min = Arr::get($f, 'minPosts');
         if (is_numeric($min)) {

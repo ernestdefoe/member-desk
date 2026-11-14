@@ -67,6 +67,11 @@ class Optional
         return $this->on('flarum-flags') && class_exists(\Flarum\Flags\Flag::class);
     }
 
+    public function trustLevels(): bool
+    {
+        return $this->on('ernestdefoe-trust-levels') && class_exists(\ErnestDefoe\TrustLevels\Names::class);
+    }
+
     public function likes(): bool
     {
         return $this->on('flarum-likes');
@@ -86,6 +91,7 @@ class Optional
             'likes' => $this->likes(),
             'docket' => $this->docket(),
             'flags' => $this->flags(),
+            'trustLevels' => $this->trustLevels(),
         ];
     }
 }

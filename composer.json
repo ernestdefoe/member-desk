@@ -42,7 +42,8 @@
         "fof/moderator-warnings": "Warnings and strikes on the member page",
         "fof/masquerade": "Custom profile fields on the member page",
         "ernestdefoe/docket": "Reports about a member on their page and in the list: status, assignee and outcome from Docket's report centre",
-        "flarum/flags": "Report counts in the list and on the member page (Docket adds statuses)"
+        "flarum/flags": "Report counts in the list and on the member page (Docket adds statuses)",
+        "ernestdefoe/trust-levels": "Each member's trust level on the list and the member page, and a filter by level, for staff Trust Levels lets see them"
     },
     "autoload": {
         "psr-4": {
@@ -72,12 +73,14 @@
                 "fof/moderator-warnings",
                 "fof/masquerade",
                 "flarum/flags",
-                "ernestdefoe/docket"
+                "ernestdefoe/docket",
+                "ernestdefoe/trust-levels"
             ]
         }
     },
     "require-dev": {
         "ernestdefoe/docket": "^1.4",
+        "ernestdefoe/trust-levels": "^1.0",
         "flarum/audit": "^2.0",
         "flarum/flags": "^2.0",
         "flarum/gdpr": "^2.0",

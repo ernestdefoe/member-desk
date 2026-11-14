@@ -7,7 +7,7 @@ import type Mithril from 'mithril';
 import { deskState } from './DeskState';
 import ConfirmModal, { reportRun } from './ConfirmModal';
 import SaveFilterModal from './SaveFilterModal';
-import { ago, api, avatar, date, desk, groupChip, num, statusPills, t, ts, type Row } from './util';
+import { ago, api, avatar, date, desk, groupChip, num, statusPills, t, trustPill, ts, type Row } from './util';
 
 const STATUSES: [string, string | null][] = [
   ['unconfirmed', null],
@@ -16,6 +16,7 @@ const STATUSES: [string, string | null][] = [
   ['noposts', null],
   ['banned', 'banIps'],
   ['reported', 'reports'],
+  ['silenced', 'trust'],
 ];
 
 const BULK = ['addGroup', 'removeGroup', 'suspend', 'confirm', 'spammer', 'anonymize', 'delete'];
@@ -179,7 +180,7 @@ export default class MemberList extends Component {
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.status')}</legend>
-          {STATUSES.filter(([, need]) => !need || (need === 'reports' ? !!meta.reports : ext[need]))
+          {STATUSES.filter(([, need]) => !need || (need === 'reports' ? !!meta.reports : need === 'trust' ? !!meta.trustLevels : ext[need]))
             .filter(([k]) => k !== 'banned' || meta.can.ips)
             .map(([k]) => (
               <label className="MemberDesk-check">
@@ -260,6 +261,18 @@ export default class MemberList extends Component {
                 />
               </label>
             </div>
+          </fieldset>
+        ) : null}
+
+        {meta.trustLevels ? (
+          <fieldset className="MemberDesk-fgroup">
+            <legend>{t('filters.trust')}</legend>
+            {meta.trustLevels.map((l) => (
+              <label className="MemberDesk-check">
+                <input type="checkbox" checked={f.trust.includes(String(l.level))} onchange={() => s.toggleIn('trust', String(l.level))} />
+                {t('trust.pill', { level: l.level, name: l.name })}
+              </label>
+            ))}
           </fieldset>
         ) : null}
 
@@ -400,6 +413,13 @@ export default class MemberList extends Component {
       ])
     );
     f.status.forEach((k) => chips.push([`s${k}`, t(`filters.status_${k}`), () => s.toggleIn('status', k)]));
+    f.trust.forEach((l) =>
+      chips.push([
+        `t${l}`,
+        t('trust.pill', { level: l, name: s.meta?.trustLevels?.find((x) => String(x.level) === l)?.name || '' }),
+        () => s.toggleIn('trust', l),
+      ])
+    );
     if (f.joinedWithin) chips.push(['jw', t(`chips.joined_${f.joinedWithin}`), () => s.setFilter('joinedWithin', '')]);
     if (f.notSeenFor) chips.push(['ns', t(`chips.away_${f.notSeenFor}`), () => s.setFilter('notSeenFor', '')]);
     if (f.joinedFrom) chips.push(['jf', t('chips.joined_from', { date: date(f.joinedFrom) }), () => s.setFilter('joinedFrom', '')]);
@@ -545,7 +565,10 @@ export default class MemberList extends Component {
                 <td className="is-num MemberDesk-colWide">{num(r.discussions)}</td>
                 {s.meta!.reports ? <td className="is-num">{this.reportCell(r)}</td> : null}
                 {can.ips ? <td className="MemberDesk-mono MemberDesk-muted MemberDesk-colWide">{r.lastIp || '—'}</td> : null}
-                <td className="MemberDesk-status">{statusPills(r, true)}</td>
+                <td className="MemberDesk-status">
+                  {statusPills(r, true)}
+                  {trustPill(r, s.meta?.trustLevels, true)}
+                </td>
               </tr>
             ))}
             {!s.rows.length && !s.loading ? (
@@ -602,7 +625,7 @@ export default class MemberList extends Component {
                 @{r.username} · {r.email}
               </span>
               <div className="MemberDesk-cardPills">
-                {this.groupList(r)} {statusPills(r, true)}
+                {this.groupList(r)} {statusPills(r, true)} {trustPill(r, s.meta?.trustLevels, true)}
               </div>
               <div className="MemberDesk-cardStrip">
                 <span>{t('list.card_posts', { count: num(r.posts) })}</span>

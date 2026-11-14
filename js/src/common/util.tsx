@@ -70,6 +70,27 @@ export interface Row {
   isYou: boolean;
   /** Reports against this member (Docket, or flarum/flags counts); null when not shown. */
   reports: { total: number; open: number } | null;
+  /** Trust Levels' level (0–4), only for staff that extension lets see it. */
+  trust: { level: number; locked: boolean; silenced: boolean } | null;
+}
+
+export interface TrustLevelName {
+  level: number;
+  name: string;
+}
+
+/** "Level 2 · Member", with a lock or a muted mark when Trust Levels holds the member there. */
+export function trustPill(r: Row, names: TrustLevelName[] | null | undefined, compact = false): Mithril.Children {
+  if (!r.trust || !names) return null;
+  const name = names.find((n) => n.level === r.trust!.level)?.name || '';
+  const full = ts('trust.pill', { level: r.trust.level, name }) + (r.trust.silenced ? ` · ${ts('trust.silenced')}` : '');
+  return (
+    <span className={`MemberDesk-pill MemberDesk-pill--trust${r.trust.silenced ? ' is-silenced' : ''}`} title={`${ts('trust.title')}: ${full}`}>
+      <Icon name={r.trust.locked ? 'fas fa-lock' : 'fas fa-shield-halved'} />
+      {compact ? name : t('trust.pill', { level: r.trust.level, name })}
+      {r.trust.silenced ? <span className="MemberDesk-trustFlag">· {t('trust.silenced')}</span> : null}
+    </span>
+  );
 }
 
 export interface GroupInfo {

@@ -14,6 +14,7 @@ export interface Filters {
   maxPosts: string;
   reportedMin: string;
   reportedWithin: string;
+  trust: string[];
 }
 
 export interface SavedFilter {
@@ -33,6 +34,7 @@ export interface Meta {
   gdprDeletionOff: boolean;
   /** Where report counts come from for this viewer: Docket, flarum/flags, or nothing. */
   reports: 'docket' | 'flags' | null;
+  trustLevels: { level: number; name: string }[] | null;
 }
 
 export const emptyFilters = (): Filters => ({
@@ -49,6 +51,7 @@ export const emptyFilters = (): Filters => ({
   maxPosts: '',
   reportedMin: '',
   reportedWithin: '',
+  trust: [],
 });
 
 /**
@@ -118,6 +121,7 @@ export default class DeskState {
     return (
       f.groups.length +
       f.status.length +
+      f.trust.length +
       [f.joinedFrom, f.joinedTo, f.seenFrom, f.seenTo, f.joinedWithin, f.notSeenFor, f.minPosts, f.maxPosts, f.reportedMin].filter((v) => v !== '')
         .length
     );
@@ -131,7 +135,7 @@ export default class DeskState {
     this.load();
   }
 
-  toggleIn(key: 'groups' | 'status', value: string) {
+  toggleIn(key: 'groups' | 'status' | 'trust', value: string) {
     const list = this.filters[key];
     this.setFilter(key, list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }

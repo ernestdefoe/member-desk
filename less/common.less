@@ -1768,3 +1768,19 @@ html[data-theme^='dark'] .MemberDeskConfirm {
     background: var(--md-sel);
   }
 }
+
+// Trust Levels' level
+.MemberDesk-pill--trust {
+  color: var(--md-info);
+  background: var(--md-info-bg);
+
+  &.is-silenced {
+    color: var(--md-warn);
+    background: var(--md-warn-bg);
+  }
+}
+
+.MemberDesk-trustFlag {
+  font-weight: 700;
+  text-transform: lowercase;
+}

@@ -117,6 +117,8 @@ ernestdefoe-member-desk:
       status_noposts: Never posted
       status_banned: Banned IP
       status_reported: Has open reports
+      status_silenced: On hold (Trust Levels)
+      trust: Trust level
       reported: Reported
       reported_min: At least this many times
       reported_within_P7D: in 7 days
@@ -308,6 +310,7 @@ ernestdefoe-member-desk:
       joined: Joined
       seen: Last seen
       online_status: Online status
+      trust: Trust level
       online_shown: Shown to others
       online_hidden: Hidden from others
       locale: Language
@@ -335,6 +338,13 @@ ernestdefoe-member-desk:
       no_sessions: Not signed in anywhere.
       unknown_device: Unknown device
       last_used: "last used {ago}"
+
+    trust:
+      pill: "Level {level} · {name}"
+      title: Trust level (Trust Levels)
+      silenced: on hold
+      locked: Locked at this level
+      open: Open in Trust Levels
 
     reports:
       against_title: "{count, plural, one {# report about this member} other {# reports about this member}}"

@@ -54,6 +54,16 @@ class Access
         return $actor->isAdmin() || ($actor->hasPermission('ernestdefoe-member-desk.export') && $this->emails($actor));
     }
 
+    /**
+     * Trust levels (ernestdefoe/trust-levels) follow that extension's own rule: a level is shown
+     * to staff with its manage permission (and admins), never to anyone else.
+     */
+    public function trust(User $actor): bool
+    {
+        return $this->optional->trustLevels()
+            && ($actor->isAdmin() || $actor->hasPermission('ernestdefoe-trust-levels.manage'));
+    }
+
     /** Whether the actor's last-seen view applies to members who hide their online status. */
     public function lastSeen(User $actor): bool
     {
