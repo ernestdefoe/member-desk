@@ -1732,3 +1732,32 @@ html[data-theme^='dark'] .MemberDeskConfirm {
 .MemberDesk-presets--after {
   margin: 6px 0 0;
 }
+
+// If the table ever has to scroll inside its card, the checkbox and the member stay put.
+.MemberDesk-table {
+  th:nth-child(-n + 2),
+  td:nth-child(-n + 2) {
+    position: sticky;
+    z-index: 1;
+    background: var(--md-bg);
+  }
+  th:nth-child(-n + 2) {
+    z-index: 2;
+    background: color-mix(in srgb, var(--md-soft) 55%, var(--md-bg));
+  }
+  th:first-child,
+  td:first-child {
+    left: 0;
+  }
+  th:nth-child(2),
+  td:nth-child(2) {
+    left: 34px;
+    box-shadow: 1px 0 0 var(--md-line);
+  }
+  tbody tr:hover td:nth-child(-n + 2) {
+    background: color-mix(in srgb, var(--md-text) 4%, var(--md-bg));
+  }
+  tbody tr.is-selected td:nth-child(-n + 2) {
+    background: var(--md-sel);
+  }
+}
