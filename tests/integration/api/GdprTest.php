@@ -146,16 +146,57 @@ class GdprTest extends TestCase
         // JoZ3 (Discuss d/40368/5): GET /api/member-desk/members/1 500'd for the first admin.
         // Excerpts come from the stored XML, never rendered: a tag no installed extension renders
         // (here an upload preview) must not reach any formatter code.
+        // The real cause on ernestdefoe.online: admins rename discussions, and the rename event post
+        // came back with the comments ("Call to undefined method DiscussionRenamedPost::formatContent").
+        $this->app()->getContainer()->make(ConnectionInterface::class)->table('posts')->insert([
+            'id' => 8, 'discussion_id' => 1, 'number' => 7, 'user_id' => 1, 'type' => 'discussionRenamed', 'created_at' => Carbon::now()->addMinute(), 'is_private' => 0,
+            'content' => json_encode(['Old', 'Hello']),
+        ]);
         $this->app()->getContainer()->make(ConnectionInterface::class)->table('posts')->insert([
             'id' => 9, 'discussion_id' => 1, 'number' => 4, 'user_id' => 1, 'type' => 'comment', 'created_at' => Carbon::now(), 'is_private' => 0,
             'content' => '<r><p>Setup <UPL-IMAGE-PREVIEW url="https://x.test/a.png"><s>[upl-image-preview url=https://x.test/a.png]</s></UPL-IMAGE-PREVIEW> done <USERMENTION displayname="target" id="4">@"target"#4</USERMENTION></p></r>',
         ]);
         $body = json_decode((string) $this->send($this->request('GET', '/api/member-desk/members/1', ['authenticatedAs' => 1]))->getBody(), true);
+        $this->assertSame([9], array_column($body['activity']['posts'], 'id'), 'comments only');
         $this->assertSame('Setup done @target', $body['activity']['posts'][0]['excerpt'] ?? '', json_encode($body['activity'] ?? null));
         foreach ([1, 4] as $id) {
             $response = $this->send($this->request('GET', "/api/member-desk/members/$id", ['authenticatedAs' => 1]));
             $this->assertSame(200, $response->getStatusCode(), "member $id: ".substr((string) $response->getBody(), 0, 600));
         }
+    }
+
+    #[Test]
+    public function an_imported_admin_with_odd_data_still_opens(): void
+    {
+        // JoZ3 again: user 1 came from Vanilla through Nitro-Porter. Imported rows carry dates
+        // no forum wrote (0000-00-00, year 1000), posts stored as HTML or plain text instead of
+        // formatter XML (rendering those throws "Cannot load XML"), and preferences that aren't JSON.
+        $db = $this->app()->getContainer()->make(ConnectionInterface::class);
+        $odd = '1000-01-01 00:00:00';
+        $db->table('users')->where('id', 1)->update(['joined_at' => $odd, 'last_seen_at' => $odd, 'marked_all_as_read_at' => $odd]);
+        if ($db->getDriverName() === 'mysql') {
+            $db->statement("SET SESSION sql_mode = ''");
+            $db->table('users')->where('id', 1)->update(['joined_at' => '0000-00-00 00:00:00']);
+        }
+        if ($db->getDriverName() === 'sqlite') {
+            // MySQL and PostgreSQL JSON columns refuse it, so an import can't have written it there.
+            $db->table('users')->where('id', 1)->update(['preferences' => 'not json']);
+        }
+        $db->table('posts')->insert([
+            ['id' => 10, 'discussion_id' => 1, 'number' => 5, 'user_id' => 1, 'type' => 'comment', 'created_at' => $odd, 'is_private' => 0, 'content' => 'Plain <b>Vanilla</b> & html'],
+            ['id' => 11, 'discussion_id' => 1, 'number' => 6, 'user_id' => 1, 'type' => 'comment', 'created_at' => Carbon::now(), 'is_private' => 0, 'content' => '<t><p>Tom & Jerry</p></t>'],
+        ]);
+        $db->table('access_tokens')->insert(['token' => str_repeat('a', 40), 'user_id' => 1, 'type' => 'session', 'created_at' => $odd, 'last_activity_at' => $odd]);
+
+        $response = $this->send($this->request('GET', '/api/member-desk/members/1', ['authenticatedAs' => 1]));
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(200, $response->getStatusCode(), substr((string) $response->getBody(), 0, 600));
+        $this->assertNull($body['member']['joinedAt'], 'an impossible join date reads as unknown');
+        $excerpts = array_column($body['activity']['posts'], 'excerpt', 'id');
+        $this->assertSame('Plain Vanilla & html', $excerpts[10] ?? null);
+        $this->assertNull(array_column($body['activity']['posts'], 'createdAt', 'id')[10]);
+
+        $this->assertSame(200, $this->send($this->request('GET', '/api/member-desk/members', ['authenticatedAs' => 1]))->getStatusCode());
     }
 
     #[Test]

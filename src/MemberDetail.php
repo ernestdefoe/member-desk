@@ -129,8 +129,10 @@ class MemberDetail
             }
         }
 
+        // CommentPost::query() is NOT limited to comments: Flarum builds each row as its own type,
+        // so a "renamed the discussion" event post came back too (and has no formatted content).
         $posts = CommentPost::query()->whereVisibleTo($actor)
-            ->where('posts.user_id', $m->id)
+            ->where('posts.user_id', $m->id)->where('posts.type', CommentPost::$type)
             ->with('discussion')
             ->orderByDesc('posts.created_at')->limit(8)->get();
 
@@ -156,14 +158,14 @@ class MemberDetail
                 'discussion' => $p->discussion?->title,
                 'slug' => $p->discussion?->slug,
                 'excerpt' => $this->excerpt($p),
-                'createdAt' => $p->created_at?->toIso8601String(),
+                'createdAt' => Presenter::date($p->created_at),
             ])->all(),
             'discussions' => $discussions->map(fn (Discussion $d) => [
                 'id' => $d->id,
                 'title' => $d->title,
                 'slug' => $d->slug,
                 'replies' => max(0, (int) $d->comment_count - 1),
-                'createdAt' => $d->created_at?->toIso8601String(),
+                'createdAt' => Presenter::date($d->created_at),
             ])->all(),
             'likes' => $likes,
         ];
@@ -179,10 +181,14 @@ class MemberDetail
         $xml = (string) $p->getRawOriginal('content');
         // Mentions store their source (@"Name"#p12); show them as the post does, @Name.
         $xml = preg_replace('#<(USER|POST)MENTION\b[^>]*?\bdisplayname="([^"]*)"[^>]*>.*?</\1MENTION>#s', '@$2', $xml) ?? $xml;
-        try {
-            $text = \s9e\TextFormatter\Utils::removeFormatting($xml);
-        } catch (\Throwable) {
-            $text = strip_tags($xml);
+        // Imported posts may be stored as HTML or plain text, not formatter XML (<r> or <t>).
+        $text = preg_match('#^<[rt][ >/]#', $xml) ? null : html_entity_decode(strip_tags($xml), ENT_QUOTES | ENT_HTML5);
+        if ($text === null) {
+            try {
+                $text = \s9e\TextFormatter\Utils::removeFormatting($xml);
+            } catch (\Throwable) {
+                $text = strip_tags($xml);
+            }
         }
 
         return mb_substr(trim(preg_replace('/\s+/', ' ', $text) ?? ''), 0, 140);
@@ -199,8 +205,8 @@ class MemberDetail
             ->get(['type', 'created_at', 'last_activity_at', 'last_ip_address', 'last_user_agent'])
             ->map(fn ($t) => [
                 'type' => $t->type,
-                'createdAt' => $t->created_at ? Carbon::parse($t->created_at)->toIso8601String() : null,
-                'lastActivityAt' => $t->last_activity_at ? Carbon::parse($t->last_activity_at)->toIso8601String() : null,
+                'createdAt' => Presenter::date($t->created_at),
+                'lastActivityAt' => Presenter::date($t->last_activity_at),
                 'ip' => $showIps ? $t->last_ip_address : null,
                 'agent' => $this->agent((string) $t->last_user_agent),
             ])->all();
@@ -298,8 +304,8 @@ class MemberDetail
                 'ip' => $ip,
                 'sources' => array_keys($e['sources']),
                 'count' => $e['count'],
-                'firstSeen' => $e['firstSeen'] ? Carbon::parse($e['firstSeen'])->toIso8601String() : null,
-                'lastSeen' => $e['lastSeen'] ? Carbon::parse($e['lastSeen'])->toIso8601String() : null,
+                'firstSeen' => Presenter::date($e['firstSeen']),
+                'lastSeen' => Presenter::date($e['lastSeen']),
                 'banned' => isset($banned[$ip]),
                 'others' => collect(array_keys($others[$ip] ?? []))
                     ->map(fn ($id) => $users->get($id))->filter()
@@ -357,7 +363,7 @@ class MemberDetail
                 'id' => (int) $r->id,
                 'note' => strip_tags((string) $r->note),
                 'by' => ($a = $authors->get($r->added_by_user_id)) ? $a->display_name : null,
-                'createdAt' => $r->created_at ? Carbon::parse($r->created_at)->toIso8601String() : null,
+                'createdAt' => Presenter::date($r->created_at),
             ])->all(),
         ];
     }
@@ -386,7 +392,7 @@ class MemberDetail
                 'strikes' => (int) $r->strikes,
                 'hidden' => (bool) $r->hidden_at,
                 'by' => ($a = $authors->get($r->created_user_id)) ? $a->display_name : null,
-                'createdAt' => $r->created_at ? Carbon::parse($r->created_at)->toIso8601String() : null,
+                'createdAt' => Presenter::date($r->created_at),
             ])->all(),
         ];
     }
@@ -422,7 +428,7 @@ class MemberDetail
 
         $r = $this->db->table('gdpr_erasure')->where('user_id', $m->id)->first(['status', 'created_at', 'processed_mode']);
 
-        return $r ? ['status' => $r->status, 'mode' => $r->processed_mode, 'createdAt' => $r->created_at ? Carbon::parse($r->created_at)->toIso8601String() : null] : null;
+        return $r ? ['status' => $r->status, 'mode' => $r->processed_mode, 'createdAt' => Presenter::date($r->created_at)] : null;
     }
 
     /** @return array<string, bool> */

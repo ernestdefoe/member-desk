@@ -193,8 +193,8 @@ class Reports
                 'assignee' => $r->assignee?->display_name,
                 'outcome' => $r->outcome ? mb_substr(trim(strip_tags((string) $r->outcome)), 0, 300) : null,
                 'discussion' => $r->post->discussion->title ?? $r->discussion?->title,
-                'createdAt' => $r->created_at?->toIso8601String(),
-                'closedAt' => $r->closed_at?->toIso8601String(),
+                'createdAt' => Presenter::date($r->created_at),
+                'closedAt' => Presenter::date($r->closed_at),
             ])->all(),
             'filed' => $filed->map(fn ($e) => [
                 'reportId' => $e->report_id,
@@ -202,7 +202,7 @@ class Reports
                 'reason' => $e->reason,
                 'about' => $e->report?->user?->display_name,
                 'discussion' => $e->report?->post?->discussion?->title,
-                'createdAt' => $e->created_at?->toIso8601String(),
+                'createdAt' => Presenter::date($e->created_at),
             ])->all(),
         ];
     }
@@ -230,7 +230,7 @@ class Reports
                 'status' => 'open',
                 'reason' => $f->reason ?: $f->type,
                 'discussion' => $f->post?->discussion?->title,
-                'createdAt' => $f->created_at?->toIso8601String(),
+                'createdAt' => Presenter::date($f->created_at),
             ])->all(),
             'filed' => $filed->map(fn ($f) => [
                 'reportId' => null,
@@ -242,7 +242,7 @@ class Reports
                 'reason' => $f->reason ?: $f->type,
                 'about' => $f->post?->user?->display_name,
                 'discussion' => $f->post?->discussion?->title,
-                'createdAt' => $f->created_at?->toIso8601String(),
+                'createdAt' => Presenter::date($f->created_at),
             ])->all(),
         ];
     }

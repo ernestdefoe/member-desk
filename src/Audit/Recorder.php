@@ -4,6 +4,7 @@ namespace ErnestDefoe\MemberDesk\Audit;
 
 use Carbon\Carbon;
 use ErnestDefoe\MemberDesk\Optional;
+use ErnestDefoe\MemberDesk\Presenter;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\User;
 use Illuminate\Database\ConnectionInterface;
@@ -108,8 +109,8 @@ class Recorder
             'username' => $member->username,
             'displayName' => $member->display_name,
             'groups' => $groups->map(fn ($g) => ['id' => $g->id, 'name' => $g->name_singular])->values()->all(),
-            'joinedAt' => $member->joined_at?->toIso8601String(),
-            'lastSeenAt' => $member->last_seen_at?->toIso8601String(),
+            'joinedAt' => Presenter::date($member->joined_at),
+            'lastSeenAt' => Presenter::date($member->last_seen_at),
             'posts' => (int) $member->comment_count,
             'discussions' => (int) $member->discussion_count,
             'emailConfirmed' => (bool) $member->is_email_confirmed,

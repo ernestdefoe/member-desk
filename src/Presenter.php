@@ -53,7 +53,7 @@ class Presenter
                 ->reject(fn ($g) => (int) $g->id === \Flarum\Group\Group::GUEST_ID || (int) $g->id === \Flarum\Group\Group::MEMBER_ID
                     || ($g->is_hidden && ! $this->hiddenGroups($actor)))
                 ->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
-            'joinedAt' => $m->joined_at?->toIso8601String(),
+            'joinedAt' => self::date($m->joined_at),
             'lastSeenAt' => $this->lastSeen($actor, $m),
             'posts' => (int) $m->comment_count,
             'discussions' => (int) $m->discussion_count,
@@ -72,6 +72,25 @@ class Presenter
             'reports' => $m->getAttribute('md_reports_total') === null ? null
                 : ['total' => (int) $m->getAttribute('md_reports_total'), 'open' => (int) $m->getAttribute('md_reports_open')],
         ];
+    }
+
+    /**
+     * A date as ISO 8601, or null when it is unknown. Imported forums (Vanilla through
+     * Nitro-Porter, for one) carry zero dates like 0000-00-00 and unparsable strings: those
+     * read as "unknown", never as the year -1 or an error.
+     */
+    public static function date(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        try {
+            $date = $value instanceof \DateTimeInterface ? \Carbon\Carbon::instance($value) : \Carbon\Carbon::parse((string) $value);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $date->year < 1971 ? null : $date->toIso8601String();
     }
 
     /** @var array<int, bool> */
@@ -101,7 +120,7 @@ class Presenter
             return null;
         }
         if ($this->access->lastSeen($actor) || $m->getPreference('discloseOnline')) {
-            return $m->last_seen_at->toIso8601String();
+            return self::date($m->last_seen_at);
         }
 
         return null;
