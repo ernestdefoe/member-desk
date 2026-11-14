@@ -464,9 +464,16 @@ html:not(#x-hi) .MemberDesk .MemberDesk-saveCurrent {
 
 .MemberDesk-sort {
   margin: 0;
+  min-width: 0;
   .FormControl {
     width: auto;
     max-width: 100%;
+    // Phones raise form text to 16px (no zoom on focus); a fixed height would clip it.
+    height: auto;
+    min-height: 36px;
+    line-height: 1.4;
+    padding-top: 7px;
+    padding-bottom: 7px;
   }
 }
 
