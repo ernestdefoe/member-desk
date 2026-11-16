@@ -712,7 +712,8 @@ export default class MemberList extends Component {
     const s = deskState();
     const params: Record<string, any> =
       selection && !s.allMatching ? { ids: Array.from(s.selected).join(','), sort: s.sort, dir: s.dir } : s.filterParams();
-    const qs = m.buildQueryString(params);
+    // A one-time value per click: the server logs each click once, even when the browser fetches the file twice.
+    const qs = m.buildQueryString({ ...params, dl: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) });
     window.location.href = `${app.forum.attribute('apiUrl')}/member-desk/export?${qs}`;
   }
 

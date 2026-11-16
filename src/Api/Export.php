@@ -9,6 +9,7 @@ use ErnestDefoe\MemberDesk\MemberQuery;
 use ErnestDefoe\MemberDesk\Optional;
 use ErnestDefoe\MemberDesk\Presenter;
 use Flarum\User\User;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Stream;
 use Psr\Http\Message\ResponseInterface;
@@ -16,7 +17,10 @@ use Psr\Http\Message\ResponseInterface;
 /**
  * CSV of the current filter (or the selected ids), written 500 rows at a time to a temp stream
  * so a large forum never holds every member in memory. Cells that a spreadsheet would run as a
- * formula (= + - @) are quoted with a leading apostrophe. Every export is logged.
+ * formula (= + - @) are quoted with a leading apostrophe. Every export is logged, once: some
+ * browsers and download helpers fetch an attachment twice (Claudius, ernestdefoe.online d/267/4),
+ * so a repeat of the same request by the same person within a minute is served but not logged
+ * again. The Export button adds a one-time `dl` value, so a second real click still logs.
  */
 class Export
 {
@@ -26,6 +30,7 @@ class Export
         protected Access $access,
         protected Optional $optional,
         protected Recorder $recorder,
+        protected Cache $cache,
     ) {
     }
 
@@ -84,7 +89,11 @@ class Export
             }
         });
 
-        $this->recorder->record($actor, 'export', null, null, ['rows' => $count, 'filters' => $ids ? ['ids' => count($ids)] : array_intersect_key($params, array_flip(['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts']))]);
+        ksort($params);
+        $once = 'member-desk.export.'.$actor->id.'.'.sha1((string) json_encode($params));
+        if ($this->cache->add($once, 1, 60)) {
+            $this->recorder->record($actor, 'export', null, null, ['rows' => $count, 'filters' => $ids ? ['ids' => count($ids)] : array_intersect_key($params, array_flip(['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts']))]);
+        }
 
         rewind($out);
         $name = 'members-'.Carbon::now()->format('Y-m-d').'.csv';

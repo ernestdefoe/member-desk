@@ -411,7 +411,7 @@ class MemberDeskTest extends TestCase
     public function csv_export_is_admin_only_and_neutralises_formulas(): void
     {
         $this->db()->table('users')->where('id', 7)->update(['username' => '=cmd']);
-        $response = $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 1]));
+        $response = $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 1])->withQueryParams(['dl' => uniqid()]));
         $this->assertSame(200, $response->getStatusCode());
         $csv = (string) $response->getBody();
         $this->assertStringContainsString("'=cmd", $csv);
@@ -419,5 +419,20 @@ class MemberDeskTest extends TestCase
 
         $this->assertSame(403, $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 3]))->getStatusCode());
         $this->assertSame('export', AuditEntry::query()->value('action'));
+    }
+
+    #[Test]
+    public function one_export_click_logs_once_even_when_the_browser_fetches_it_twice(): void
+    {
+        // Claudius (ernestdefoe.online d/267/4): one click, two "Exported CSV" rows in the log.
+        $click = ['dl' => uniqid('a'), 'groups' => '4'];
+        foreach ([$click, $click] as $params) {
+            $this->assertSame(200, $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 1])->withQueryParams($params))->getStatusCode());
+        }
+        $this->assertSame(1, AuditEntry::query()->where('action', 'export')->count(), 'the repeat fetch is served, not logged');
+
+        // A second click is a new export and is logged.
+        $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 1])->withQueryParams(['dl' => uniqid('b'), 'groups' => '4']));
+        $this->assertSame(2, AuditEntry::query()->where('action', 'export')->count());
     }
 }
