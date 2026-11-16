@@ -5,7 +5,8 @@
  * with `ernestdefoe-member-desk.view` (moderators by default) get the same list and member page
  * on the forum at /member-desk, since Flarum's admin is admins-only.
  *
- * The API is plain JSON under /api/member-desk (src/Api/Controller.php). Permissions and the
+ * Saved filters and the log are JSON:API resources; the list, member page and actions are plain
+ * JSON under /api/member-desk (src/Api/Controller.php says why). Permissions and the
  * hard rules (never yourself, never an admin) are in src/Access.php; every action runs through
  * Flarum's own API as the staff member (src/Actions.php), and delete/anonymize go through
  * flarum/gdpr's own erasure when it's installed.
@@ -14,12 +15,12 @@
  * boot and fatals every request while a deploy is swapping composer's autoload map.
  */
 
-use ErnestDefoe\MemberDesk\Access;
 use ErnestDefoe\MemberDesk\Api\Controller;
+use ErnestDefoe\MemberDesk\Api\ForumFields;
+use ErnestDefoe\MemberDesk\Api\LogResource;
+use ErnestDefoe\MemberDesk\Api\SavedFilterResource;
 use ErnestDefoe\MemberDesk\Console\PruneCommand;
-use Flarum\Api\Context;
 use Flarum\Api\Resource\ForumResource;
-use Flarum\Api\Schema;
 use Flarum\Extend;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 
@@ -45,21 +46,16 @@ return [
         ->post('/member-desk/run', 'member-desk.run', Controller::class)
         ->get('/member-desk/batches/{batch:[0-9a-f-]{36}}', 'member-desk.batch', Controller::class)
         ->get('/member-desk/export', 'member-desk.export', Controller::class)
-        ->get('/member-desk/log', 'member-desk.log', Controller::class)
         ->post('/member-desk/hash-check', 'member-desk.hashCheck', Controller::class)
-        ->post('/member-desk/ban-ip', 'member-desk.banIp', Controller::class)
-        ->get('/member-desk/filters', 'member-desk.filters', Controller::class)
-        ->post('/member-desk/filters', 'member-desk.createFilter', Controller::class)
-        ->patch('/member-desk/filters/{id:\d+}', 'member-desk.updateFilter', Controller::class)
-        ->delete('/member-desk/filters/{id:\d+}', 'member-desk.deleteFilter', Controller::class),
+        ->post('/member-desk/ban-ip', 'member-desk.banIp', Controller::class),
+
+    // Saved filters and the log: ordinary JSON:API resources.
+    new Extend\ApiResource(SavedFilterResource::class),
+    new Extend\ApiResource(LogResource::class),
 
     // Only staff who can open Member Desk get this (permission checks, no queries).
     (new Extend\ApiResource(ForumResource::class))
-        ->fields(fn () => [
-            Schema\Arr::make('memberDesk')
-                ->visible(fn ($forum, Context $context) => resolve(Access::class)->view($context->getActor()))
-                ->get(fn ($forum, Context $context) => resolve(Access::class)->forActor($context->getActor())),
-        ]),
+        ->fields(ForumFields::class),
 
     (new Extend\Settings())
         ->default('ernestdefoe-member-desk.retention_days', 90),

@@ -213,65 +213,71 @@ class Actions
             'suspendMessage' => null,
         ]]);
 
-        $hiddenPosts = [];
-        CommentPost::query()->with(['user', 'discussion'])->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
-            ->chunkById(200, function ($posts) use ($actor, &$hiddenPosts) {
-                foreach ($posts as $post) {
-                    /** @var CommentPost $post */
-                    $post->hide($actor);
-                    $post->save();
-                    foreach ($post->releaseEvents() as $event) {
-                        $this->events->dispatch($event);
-                    }
-                    $hiddenPosts[] = $post->id;
-                }
-            });
+        $posts = $this->setHidden(CommentPost::query()->with(['user', 'discussion'])->where('user_id', $member->id)->whereNull('hidden_at'), $actor);
+        $discussions = $this->setHidden(Discussion::query()->with('user')->where('user_id', $member->id)->whereNull('hidden_at'), $actor);
+        [$banned, $banSkipped] = $this->optional->banIps() ? $this->banIpsOf($actor, $member) : [[], 0];
 
-        $hiddenDiscussions = [];
-        Discussion::query()->with('user')->where('user_id', $member->id)->whereNull('hidden_at')->orderBy('id')
-            ->chunkById(200, function ($discussions) use ($actor, &$hiddenDiscussions) {
-                foreach ($discussions as $discussion) {
-                    /** @var Discussion $discussion */
-                    $discussion->hide($actor);
-                    $discussion->save();
-                    foreach ($discussion->releaseEvents() as $event) {
-                        $this->events->dispatch($event);
-                    }
-                    $hiddenDiscussions[] = $discussion->id;
-                }
-            });
+        $this->finish($entry, [
+            'posts' => $posts,
+            'discussions' => $discussions,
+            'bannedIps' => $banned,
+        ] + ($banSkipped ? ['banSkipped' => $banSkipped] : []));
+    }
 
-        $banned = [];
-        if ($this->optional->banIps()) {
-            $already = [];
-            $ips = $this->recorder->ipsOf($member->id);
-            if ($ips) {
-                $already = $this->db->table('banned_ips')->whereIn('address', $ips)->pluck('address')->flip()->all();
+    /**
+     * Hide (as $actor) or, with no actor, restore every post or discussion the query finds, 200 at
+     * a time, firing the model's own events. Returns the ids it changed.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<CommentPost>|\Illuminate\Database\Eloquent\Builder<Discussion> $query
+     * @return int[]
+     */
+    protected function setHidden(\Illuminate\Database\Eloquent\Builder $query, ?User $actor): array
+    {
+        $ids = [];
+        $query->orderBy('id')->chunkById(200, function ($models) use ($actor, &$ids) {
+            foreach ($models as $model) {
+                /** @var CommentPost|Discussion $model */
+                $actor ? $model->hide($actor) : $model->restore();
+                $model->save();
+                foreach ($model->releaseEvents() as $event) {
+                    $this->events->dispatch($event);
+                }
+                $ids[] = $model->id;
             }
-            foreach ($ips as $ip) {
-                // Never ban the acting staff member's own address, or one an active member also
-                // uses (a shared home, office or carrier NAT). In a spam ring the shared address
-                // is banned once the last account on it has been marked.
-                if (isset($already[$ip]) || $this->bans->actorUses($actor, $ip) || $this->sharedWithActive($member, $ip)) {
-                    continue;
+        });
+
+        return $ids;
+    }
+
+    /**
+     * Ban the spammer's IPs through fof/ban-ips' own API. Never the acting staff member's own
+     * address, or one an active member also uses (a shared home, office or carrier NAT): in a spam
+     * ring the shared address is banned once the last account on it has been marked. A staff
+     * member fof/ban-ips won't let ban (no banIP permission) still marks the spammer; the IPs just
+     * stay unbanned and are counted as skipped.
+     *
+     * @return array{0: string[], 1: int}
+     */
+    protected function banIpsOf(User $actor, User $member): array
+    {
+        $ips = $this->recorder->ipsOf($member->id);
+        $already = $ips ? $this->db->table('banned_ips')->whereIn('address', $ips)->pluck('address')->flip()->all() : [];
+        $banned = [];
+        $skipped = 0;
+        foreach ($ips as $ip) {
+            if (isset($already[$ip]) || $this->bans->actorUses($actor, $ip) || $this->sharedWithActive($member, $ip)) {
+                continue;
+            }
+            try {
+                if ($this->bans->ban($actor, $ip, $member->id, 'Spammer (Member Desk)')) {
+                    $banned[] = $ip;
                 }
-                // Through fof/ban-ips' own API: a staff member it won't let ban (no banIP
-                // permission) still marks the spammer; the IPs just stay unbanned.
-                try {
-                    if ($this->bans->ban($actor, $ip, $member->id, 'Spammer (Member Desk)')) {
-                        $banned[] = $ip;
-                    }
-                } catch (\Flarum\User\Exception\PermissionDeniedException|\Flarum\Foundation\ValidationException|\Tobyz\JsonApiServer\Exception\ForbiddenException|\Tobyz\JsonApiServer\Exception\UnprocessableEntityException) {
-                    $banSkipped = ($banSkipped ?? 0) + 1;
-                }
+            } catch (\Flarum\User\Exception\PermissionDeniedException|\Flarum\Foundation\ValidationException|\Tobyz\JsonApiServer\Exception\ForbiddenException|\Tobyz\JsonApiServer\Exception\UnprocessableEntityException) {
+                $skipped++;
             }
         }
 
-        $this->finish($entry, [
-            'posts' => $hiddenPosts,
-            'discussions' => $hiddenDiscussions,
-            'bannedIps' => $banned,
-        ] + (isset($banSkipped) ? ['banSkipped' => $banSkipped] : []));
+        return [$banned, $skipped];
     }
 
     protected function sharedWithActive(User $member, string $ip): bool
@@ -296,29 +302,8 @@ class Actions
         $after = $last->after ?? [];
         $entry = $this->recorder->record($actor, 'unspam', $member->id, null, ['restores' => $last->id], $batch, 'running');
 
-        CommentPost::query()->with(['user', 'discussion'])->whereIn('id', $after['posts'] ?? [])->whereNotNull('hidden_at')
-            ->chunkById(200, function ($posts) {
-                foreach ($posts as $post) {
-                    /** @var CommentPost $post */
-                    $post->restore();
-                    $post->save();
-                    foreach ($post->releaseEvents() as $event) {
-                        $this->events->dispatch($event);
-                    }
-                }
-            });
-
-        Discussion::query()->with('user')->whereIn('id', $after['discussions'] ?? [])->whereNotNull('hidden_at')
-            ->chunkById(200, function ($discussions) {
-                foreach ($discussions as $discussion) {
-                    /** @var Discussion $discussion */
-                    $discussion->restore();
-                    $discussion->save();
-                    foreach ($discussion->releaseEvents() as $event) {
-                        $this->events->dispatch($event);
-                    }
-                }
-            });
+        $this->setHidden(CommentPost::query()->with(['user', 'discussion'])->whereIn('id', $after['posts'] ?? [])->whereNotNull('hidden_at'), null);
+        $this->setHidden(Discussion::query()->with('user')->whereIn('id', $after['discussions'] ?? [])->whereNotNull('hidden_at'), null);
 
         if (! empty($after['bannedIps'])) {
             $this->bans->unban($actor, $after['bannedIps'], $member->id);

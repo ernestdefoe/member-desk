@@ -32,6 +32,8 @@ export interface Meta {
   can: Record<string, boolean>;
   filters: SavedFilter[];
   gdprDeletionOff: boolean;
+  /** Days a log entry keeps names before it's pruned. */
+  retentionDays: number;
   /** Where report counts come from for this viewer: Docket, flarum/flags, or nothing. */
   reports: 'docket' | 'flags' | null;
   trustLevels: { level: number; name: string }[] | null;

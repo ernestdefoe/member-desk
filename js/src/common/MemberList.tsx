@@ -4,10 +4,10 @@ import Button from 'flarum/common/components/Button';
 import Icon from 'flarum/common/components/Icon';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import type Mithril from 'mithril';
-import { deskState } from './DeskState';
+import { deskState, type SavedFilter } from './DeskState';
 import ConfirmModal, { reportRun } from './ConfirmModal';
 import SaveFilterModal from './SaveFilterModal';
-import { ago, api, avatar, date, desk, groupChip, num, statusPills, t, trustPill, ts, type Row } from './util';
+import { ago, avatar, date, desk, groupChip, jsonApi, num, savedFilters, statusPills, t, trustPill, ts, type Row } from './util';
 
 const STATUSES: [string, string | null][] = [
   ['unconfirmed', null],
@@ -133,205 +133,66 @@ export default class MemberList extends Component {
   filters(): Mithril.Children {
     const s = deskState();
     const meta = s.meta!;
-    const f = s.filters;
     const ext = meta.extensions;
+    const statuses = STATUSES.filter(
+      ([, need]) => !need || (need === 'reports' ? !!meta.reports : need === 'trust' ? !!meta.trustLevels : ext[need])
+    ).filter(([k]) => k !== 'banned' || meta.can.ips);
 
     return (
       <aside className={`MemberDesk-filters${this.filtersOpen ? ' is-open' : ''}`} aria-label={ts('filters.label')}>
-        <div className="MemberDesk-fgroup MemberDesk-saved">
-          <h4>{t('filters.saved')}</h4>
-          {meta.filters.map((sf) => (
-            <div className={`MemberDesk-savedItem${s.activeFilter === sf.id ? ' is-active' : ''}`}>
-              <button type="button" className="MemberDesk-savedApply" onclick={() => s.apply(sf)}>
-                <span>{sf.name}</span>
-                <span className="MemberDesk-muted">{sf.shared ? t('filters.shared') : t('filters.mine')}</span>
-              </button>
-              {sf.canEdit ? (
-                <button
-                  type="button"
-                  className="MemberDesk-savedDelete"
-                  aria-label={ts('filters.delete', { name: sf.name })}
-                  title={ts('filters.delete', { name: sf.name })}
-                  onclick={() => this.deleteFilter(sf.id)}
-                >
-                  <Icon name="fas fa-xmark" />
-                </button>
-              ) : null}
-            </div>
-          ))}
-          <Button className="Button Button--link MemberDesk-saveCurrent" icon="fas fa-plus" onclick={() => this.saveFilter()}>
-            {t('filters.save')}
-          </Button>
-        </div>
+        {this.savedFilters()}
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.groups')}</legend>
-          {meta.groups.map((g) => (
-            <label className="MemberDesk-check">
-              <input type="checkbox" checked={f.groups.includes(String(g.id))} onchange={() => s.toggleIn('groups', String(g.id))} />
-              {groupChip(g)}
-            </label>
-          ))}
-          <label className="MemberDesk-check">
-            <input type="checkbox" checked={f.groups.includes('none')} onchange={() => s.toggleIn('groups', 'none')} />
-            {t('filters.no_group')}
-          </label>
+          {meta.groups.map((g) => this.check('groups', String(g.id), groupChip(g)))}
+          {this.check('groups', 'none', t('filters.no_group'))}
         </fieldset>
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.status')}</legend>
-          {STATUSES.filter(([, need]) => !need || (need === 'reports' ? !!meta.reports : need === 'trust' ? !!meta.trustLevels : ext[need]))
-            .filter(([k]) => k !== 'banned' || meta.can.ips)
-            .map(([k]) => (
-              <label className="MemberDesk-check">
-                <input type="checkbox" checked={f.status.includes(k)} onchange={() => s.toggleIn('status', k)} />
-                {t(`filters.status_${k}`)}
-              </label>
-            ))}
+          {statuses.map(([k]) => this.check('status', k, t(`filters.status_${k}`)))}
         </fieldset>
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.joined')}</legend>
-          <div className="MemberDesk-presets">
-            {['P1D', 'P7D', 'P30D', 'P1Y'].map((p) => (
-              <button
-                type="button"
-                className={`MemberDesk-preset${f.joinedWithin === p ? ' is-on' : ''}`}
-                aria-pressed={f.joinedWithin === p ? 'true' : 'false'}
-                onclick={() => s.setFilter('joinedWithin', f.joinedWithin === p ? '' : p)}
-              >
-                {t(`filters.within_${p}`)}
-              </button>
-            ))}
-          </div>
-          <div className="MemberDesk-range MemberDesk-range--dates">
-            <label>
-              <span>{t('filters.from')}</span>
-              <input
-                type="date"
-                className="FormControl"
-                value={f.joinedFrom}
-                onchange={(e: Event) => this.date('joinedFrom', (e.target as HTMLInputElement).value)}
-              />
-            </label>
-            <label>
-              <span>{t('filters.to')}</span>
-              <input
-                type="date"
-                className="FormControl"
-                value={f.joinedTo}
-                onchange={(e: Event) => this.date('joinedTo', (e.target as HTMLInputElement).value)}
-              />
-            </label>
-          </div>
+          {this.presets('joinedWithin', ['P1D', 'P7D', 'P30D', 'P1Y'], (p) => t(`filters.within_${p}`))}
+          {this.dateRange('joinedFrom', 'joinedTo')}
         </fieldset>
 
         {meta.can.lastSeen ? (
           <fieldset className="MemberDesk-fgroup">
             <legend>{t('filters.seen')}</legend>
-            <div className="MemberDesk-presets">
-              {['P30D', 'P6M', 'P1Y', 'P2Y'].map((p) => (
-                <button
-                  type="button"
-                  className={`MemberDesk-preset${f.notSeenFor === p ? ' is-on' : ''}`}
-                  aria-pressed={f.notSeenFor === p ? 'true' : 'false'}
-                  onclick={() => s.setFilter('notSeenFor', f.notSeenFor === p ? '' : p)}
-                >
-                  {t(`filters.away_${p}`)}
-                </button>
-              ))}
-            </div>
-            <div className="MemberDesk-range MemberDesk-range--dates">
-              <label>
-                <span>{t('filters.from')}</span>
-                <input
-                  type="date"
-                  className="FormControl"
-                  value={f.seenFrom}
-                  onchange={(e: Event) => this.date('seenFrom', (e.target as HTMLInputElement).value)}
-                />
-              </label>
-              <label>
-                <span>{t('filters.to')}</span>
-                <input
-                  type="date"
-                  className="FormControl"
-                  value={f.seenTo}
-                  onchange={(e: Event) => this.date('seenTo', (e.target as HTMLInputElement).value)}
-                />
-              </label>
-            </div>
+            {this.presets('notSeenFor', ['P30D', 'P6M', 'P1Y', 'P2Y'], (p) => t(`filters.away_${p}`))}
+            {this.dateRange('seenFrom', 'seenTo')}
           </fieldset>
         ) : null}
 
         {meta.trustLevels ? (
           <fieldset className="MemberDesk-fgroup">
             <legend>{t('filters.trust')}</legend>
-            {meta.trustLevels.map((l) => (
-              <label className="MemberDesk-check">
-                <input type="checkbox" checked={f.trust.includes(String(l.level))} onchange={() => s.toggleIn('trust', String(l.level))} />
-                {t('trust.pill', { level: l.level, name: l.name })}
-              </label>
-            ))}
+            {meta.trustLevels.map((l) => this.check('trust', String(l.level), t('trust.pill', { level: l.level, name: l.name })))}
           </fieldset>
         ) : null}
 
         {meta.reports ? (
           <fieldset className="MemberDesk-fgroup">
             <legend>{t('filters.reported')}</legend>
-            <div className="MemberDesk-range">
-              <label>
-                <span>{t('filters.reported_min')}</span>
-                <input
-                  type="number"
-                  min="1"
-                  inputmode="numeric"
-                  className="FormControl"
-                  value={f.reportedMin}
-                  onchange={(e: Event) => s.setFilter('reportedMin', (e.target as HTMLInputElement).value)}
-                />
-              </label>
-            </div>
-            <div className="MemberDesk-presets MemberDesk-presets--after">
-              {['P7D', 'P30D', 'P90D', ''].map((p) => (
-                <button
-                  type="button"
-                  className={`MemberDesk-preset${f.reportedWithin === p ? ' is-on' : ''}`}
-                  aria-pressed={f.reportedWithin === p ? 'true' : 'false'}
-                  onclick={() => s.setFilter('reportedWithin', p)}
-                >
-                  {t(`filters.reported_within_${p || 'ever'}`)}
-                </button>
-              ))}
-            </div>
+            <div className="MemberDesk-range">{this.numberInput('reportedMin', t('filters.reported_min'), 1)}</div>
+            {this.presets(
+              'reportedWithin',
+              ['P7D', 'P30D', 'P90D', ''],
+              (p) => t(`filters.reported_within_${p || 'ever'}`),
+              'MemberDesk-presets--after',
+              false
+            )}
           </fieldset>
         ) : null}
 
         <fieldset className="MemberDesk-fgroup">
           <legend>{t('filters.posts')}</legend>
           <div className="MemberDesk-range">
-            <label>
-              <span>{t('filters.min')}</span>
-              <input
-                type="number"
-                min="0"
-                inputmode="numeric"
-                className="FormControl"
-                value={f.minPosts}
-                onchange={(e: Event) => s.setFilter('minPosts', (e.target as HTMLInputElement).value)}
-              />
-            </label>
-            <label>
-              <span>{t('filters.max')}</span>
-              <input
-                type="number"
-                min="0"
-                inputmode="numeric"
-                className="FormControl"
-                value={f.maxPosts}
-                onchange={(e: Event) => s.setFilter('maxPosts', (e.target as HTMLInputElement).value)}
-              />
-            </label>
+            {this.numberInput('minPosts', t('filters.min'), 0)}
+            {this.numberInput('maxPosts', t('filters.max'), 0)}
           </div>
         </fieldset>
 
@@ -341,6 +202,112 @@ export default class MemberList extends Component {
           </Button>
         ) : null}
       </aside>
+    );
+  }
+
+  savedFilters(): Mithril.Children {
+    const s = deskState();
+
+    return (
+      <div className="MemberDesk-fgroup MemberDesk-saved">
+        <h4>{t('filters.saved')}</h4>
+        {s.meta!.filters.map((sf) => (
+          <div className={`MemberDesk-savedItem${s.activeFilter === sf.id ? ' is-active' : ''}`}>
+            <button type="button" className="MemberDesk-savedApply" onclick={() => s.apply(sf)}>
+              <span>{sf.name}</span>
+              <span className="MemberDesk-muted">{sf.shared ? t('filters.shared') : t('filters.mine')}</span>
+            </button>
+            {sf.canEdit ? (
+              <button
+                type="button"
+                className="MemberDesk-savedDelete"
+                aria-label={ts('filters.delete', { name: sf.name })}
+                title={ts('filters.delete', { name: sf.name })}
+                onclick={() => this.deleteFilter(sf.id)}
+              >
+                <Icon name="fas fa-xmark" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+        <Button className="Button Button--link MemberDesk-saveCurrent" icon="fas fa-plus" onclick={() => this.saveFilter()}>
+          {t('filters.save')}
+        </Button>
+      </div>
+    );
+  }
+
+  /** One checkbox in a list filter (groups, status, trust). */
+  check(key: 'groups' | 'status' | 'trust', value: string, label: Mithril.Children): Mithril.Children {
+    const s = deskState();
+
+    return (
+      <label className="MemberDesk-check">
+        <input type="checkbox" checked={s.filters[key].includes(value)} onchange={() => s.toggleIn(key, value)} />
+        {label}
+      </label>
+    );
+  }
+
+  /** Quick-pick buttons; a second click clears the pick unless `toggles` is false. */
+  presets(
+    key: 'joinedWithin' | 'notSeenFor' | 'reportedWithin',
+    values: string[],
+    label: (p: string) => Mithril.Children,
+    className = '',
+    toggles = true
+  ): Mithril.Children {
+    const s = deskState();
+    const current = s.filters[key];
+
+    return (
+      <div className={`MemberDesk-presets ${className}`.trim()}>
+        {values.map((p) => (
+          <button
+            type="button"
+            className={`MemberDesk-preset${current === p ? ' is-on' : ''}`}
+            aria-pressed={current === p ? 'true' : 'false'}
+            onclick={() => s.setFilter(key, toggles && current === p ? '' : p)}
+          >
+            {label(p)}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  dateRange(from: 'joinedFrom' | 'seenFrom', to: 'joinedTo' | 'seenTo'): Mithril.Children {
+    const f = deskState().filters;
+    const input = (key: typeof from | typeof to, label: Mithril.Children) => (
+      <label>
+        <span>{label}</span>
+        <input type="date" className="FormControl" value={f[key]} onchange={(e: Event) => this.date(key, (e.target as HTMLInputElement).value)} />
+      </label>
+    );
+
+    return (
+      <div className="MemberDesk-range MemberDesk-range--dates">
+        {input(from, t('filters.from'))}
+        {input(to, t('filters.to'))}
+      </div>
+    );
+  }
+
+  numberInput(key: 'reportedMin' | 'minPosts' | 'maxPosts', label: Mithril.Children, min: number): Mithril.Children {
+    const s = deskState();
+
+    return (
+      <label>
+        <span>{label}</span>
+        <input
+          type="number"
+          min={String(min)}
+          inputmode="numeric"
+          className="FormControl"
+          value={s.filters[key]}
+          onchange={(e: Event) => s.setFilter(key, (e.target as HTMLInputElement).value)}
+        />
+      </label>
     );
   }
 
@@ -733,10 +700,12 @@ export default class MemberList extends Component {
     const s = deskState();
     const f = s.meta!.filters.find((x) => x.id === id);
     if (!f || !confirm(ts('filters.delete_confirm', { name: f.name }))) return;
-    api('DELETE', `/filters/${id}`).then((filters: any) => {
-      s.meta!.filters = filters;
-      if (s.activeFilter === id) s.activeFilter = null;
-      m.redraw();
-    });
+    jsonApi('DELETE', `member-desk-filters/${id}`)
+      .then(() => savedFilters<SavedFilter>())
+      .then((filters) => {
+        s.meta!.filters = filters;
+        if (s.activeFilter === id) s.activeFilter = null;
+        m.redraw();
+      });
   }
 }

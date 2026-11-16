@@ -2,6 +2,7 @@
 
 namespace ErnestDefoe\MemberDesk;
 
+use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\Exception\PermissionDeniedException;
 use Flarum\User\User;
 
@@ -22,7 +23,7 @@ class Access
     /** Actions that may never touch the actor themselves or an admin. */
     public const PROTECTED = ['suspend', 'spammer', 'anonymize', 'delete', 'signOut'];
 
-    public function __construct(protected Optional $optional)
+    public function __construct(protected Optional $optional, protected SettingsRepositoryInterface $settings)
     {
     }
 
@@ -138,9 +139,8 @@ class Access
      */
     public function gdprAllows(string $mode): bool
     {
-        $settings = resolve(\Flarum\Settings\SettingsRepositoryInterface::class);
         $key = $mode === 'deletion' ? 'flarum-gdpr.allow-deletion' : 'flarum-gdpr.allow-anonymization';
-        $value = $settings->get($key);
+        $value = $this->settings->get($key);
 
         // Unset = gdpr's defaults: anonymization on, deletion off.
         if ($value === null) {

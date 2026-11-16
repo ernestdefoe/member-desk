@@ -27,6 +27,18 @@ class SavedFilter extends AbstractModel
         'created_at' => 'datetime',
     ];
 
+    /** Its owner, or any admin when it's shared. */
+    public function canEdit(User $actor): bool
+    {
+        return $this->user_id === $actor->id || ($this->shared && $actor->isAdmin());
+    }
+
+    /** @return array<string, mixed> */
+    public function decoded(): array
+    {
+        return json_decode($this->query, true) ?: [];
+    }
+
     /** @return array<string, mixed> */
     public function present(User $actor): array
     {
@@ -35,8 +47,8 @@ class SavedFilter extends AbstractModel
             'name' => $this->name,
             'shared' => $this->shared,
             'mine' => $this->user_id === $actor->id,
-            'canEdit' => $this->user_id === $actor->id || ($this->shared && $actor->isAdmin()),
-            'query' => json_decode($this->query, true) ?: [],
+            'canEdit' => $this->canEdit($actor),
+            'query' => $this->decoded(),
         ];
     }
 }

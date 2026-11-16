@@ -9,6 +9,7 @@ use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Psr\Log\LoggerInterface;
 
 /**
  * Bulk actions: the confirmation's numbers (preview) and the run. A target is either explicit ids
@@ -31,6 +32,7 @@ class Bulk
         protected Actions $actions,
         protected Cache $cache,
         protected Queue $queue,
+        protected LoggerInterface $log,
     ) {
     }
 
@@ -163,7 +165,12 @@ class Bulk
                     $done++;
                 } catch (\Throwable $e) {
                     AuditEntry::query()->where('batch', $batch)->where('user_id', $id)->where('status', 'running')->update(['status' => 'failed']);
-                    $failed[] = ['id' => $id, 'displayName' => $m->display_name, 'reason' => $this->reason($e)];
+                    $reason = $this->reason($e);
+                    // A refusal (self, admin, permission…) is the answer; anything else is a bug to find.
+                    if ($reason === 'error') {
+                        $this->log->error('[member-desk] '.$action.' failed for member '.$id.': '.$e->getMessage(), ['exception' => $e]);
+                    }
+                    $failed[] = ['id' => $id, 'displayName' => $m->display_name, 'reason' => $reason];
                 }
             }
         }

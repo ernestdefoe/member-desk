@@ -9,20 +9,11 @@ import { setLinks } from '../common/links';
 
 const EXT = 'ernestdefoe-member-desk';
 
-/*
- * forum.js only wires routes and two links for staff; the pages are one lazy chunk.
- */
-const lazy = (name: 'ForumListPage' | 'ForumMemberPage' | 'ForumLogPage') => () =>
-  import('./components').then((chunk) => ({ default: (chunk as any)[name] }));
+export { default as extend } from './extend';
 
 const canView = () => !!app.forum.attribute<any>('memberDesk')?.view;
 
 app.initializers.add(EXT, () => {
-  // /member-desk/log before /member-desk/:id: routes match in order.
-  app.routes['member-desk.index'] = { path: '/member-desk', component: lazy('ForumListPage') as any };
-  app.routes['member-desk.log'] = { path: '/member-desk/log', component: lazy('ForumLogPage') as any };
-  app.routes['member-desk.member'] = { path: '/member-desk/:id', component: lazy('ForumMemberPage') as any };
-
   const base = () => app.forum.attribute<string>('baseUrl');
   setLinks({
     list: () => app.route('member-desk.index'),

@@ -31,6 +31,26 @@ export function api<T = any>(method: string, path: string, body?: any, params?: 
   } as any);
 }
 
+/** A JSON:API document's resources as plain objects: {id, ...attributes}. */
+export function attributes<T>(doc: { data: any[] }): T[] {
+  return doc.data.map((d) => ({ id: Number(d.id), ...d.attributes }) as T);
+}
+
+/** Member Desk's JSON:API resources (saved filters, the log). */
+export function jsonApi<T = any>(method: string, path: string, attrs?: Record<string, any>, params?: Record<string, any>): Promise<T> {
+  return app.request<T>({
+    method,
+    url: `${app.forum.attribute('apiUrl')}/${path}`,
+    body: attrs ? { data: { type: path.split('/')[0], attributes: attrs } } : undefined,
+    params,
+  } as any);
+}
+
+/** The saved filters this staff member sees: their own and the shared ones. */
+export function savedFilters<T>(): Promise<T[]> {
+  return jsonApi('GET', 'member-desk-filters').then((doc: any) => attributes<T>(doc));
+}
+
 export { desk, setLinks, type DeskLinks } from './links';
 
 export function num(n: number | null | undefined): string {

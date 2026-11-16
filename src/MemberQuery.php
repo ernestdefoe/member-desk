@@ -5,7 +5,6 @@ namespace ErnestDefoe\MemberDesk;
 use Carbon\Carbon;
 use Carbon\CarbonInterval;
 use Flarum\User\User;
-use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 
@@ -32,7 +31,6 @@ class MemberQuery
     public function __construct(
         protected Access $access,
         protected Optional $optional,
-        protected ConnectionInterface $db,
         protected Reports $reports,
     ) {
     }
@@ -50,26 +48,50 @@ class MemberQuery
             $this->search($query, $actor, $q);
         }
 
-        $groups = array_filter((array) Arr::get($f, 'groups', []), fn ($g) => $g !== '' && $g !== null);
-        if ($groups) {
-            $ids = array_map('intval', array_filter($groups, 'is_numeric'));
-            // 🚨 Filtering by a hidden group would list its members: only for staff who may see it.
-            if ($ids && ! $actor->can('viewHiddenGroups')) {
-                $ids = \Flarum\Group\Group::query()->whereIn('id', $ids)->where('is_hidden', false)->pluck('id')->map(fn ($id) => (int) $id)->all() ?: [0];
-            }
-            $none = in_array('none', $groups, true);
-            $query->where(function (Builder $w) use ($ids, $none) {
-                if ($ids) {
-                    $w->whereHas('groups', fn ($g) => $g->whereIn('groups.id', $ids));
-                }
-                if ($none) {
-                    // Some forums hold explicit Member rows: those still count as "no extra group".
-                    $w->orWhereDoesntHave('groups', fn ($g) => $g->whereNotIn('groups.id', [\Flarum\Group\Group::GUEST_ID, \Flarum\Group\Group::MEMBER_ID]));
-                }
-            });
-        }
+        $this->groups($query, $actor, (array) Arr::get($f, 'groups', []));
+        $this->statuses($query, $actor, (array) Arr::get($f, 'status', []));
+        $this->dates($query, $actor, $f);
+        $this->reports->filter($query, $actor, $f);
+        $this->trustLevels($query, $actor, (array) Arr::get($f, 'trust', []));
+        $this->postCounts($query, Arr::get($f, 'minPosts'), Arr::get($f, 'maxPosts'));
 
-        foreach ((array) Arr::get($f, 'status', []) as $status) {
+        return $query;
+    }
+
+    /**
+     * @param Builder<User> $query
+     * @param array<int|string, mixed> $groups
+     */
+    protected function groups(Builder $query, User $actor, array $groups): void
+    {
+        $groups = array_filter($groups, fn ($g) => $g !== '' && $g !== null);
+        if (! $groups) {
+            return;
+        }
+        $ids = array_map('intval', array_filter($groups, 'is_numeric'));
+        // 🚨 Filtering by a hidden group would list its members: only for staff who may see it.
+        if ($ids && ! $actor->can('viewHiddenGroups')) {
+            $ids = \Flarum\Group\Group::query()->whereIn('id', $ids)->where('is_hidden', false)->pluck('id')->map(fn ($id) => (int) $id)->all() ?: [0];
+        }
+        $none = in_array('none', $groups, true);
+        $query->where(function (Builder $w) use ($ids, $none) {
+            if ($ids) {
+                $w->whereHas('groups', fn ($g) => $g->whereIn('groups.id', $ids));
+            }
+            if ($none) {
+                // Some forums hold explicit Member rows: those still count as "no extra group".
+                $w->orWhereDoesntHave('groups', fn ($g) => $g->whereNotIn('groups.id', [\Flarum\Group\Group::GUEST_ID, \Flarum\Group\Group::MEMBER_ID]));
+            }
+        });
+    }
+
+    /**
+     * @param Builder<User> $query
+     * @param array<int|string, mixed> $statuses
+     */
+    protected function statuses(Builder $query, User $actor, array $statuses): void
+    {
+        foreach ($statuses as $status) {
             match ($status) {
                 'unconfirmed' => $query->where('is_email_confirmed', false),
                 'confirmed' => $query->where('is_email_confirmed', true),
@@ -81,7 +103,16 @@ class MemberQuery
                 default => null,
             };
         }
+    }
 
+    /**
+     * Joined and last-seen ranges; last seen only for staff who may see it.
+     *
+     * @param Builder<User> $query
+     * @param array<string, mixed> $f
+     */
+    protected function dates(Builder $query, User $actor, array $f): void
+    {
         $this->dateRange($query, 'joined_at', Arr::get($f, 'joinedFrom'), Arr::get($f, 'joinedTo'));
         if ($within = $this->interval(Arr::get($f, 'joinedWithin'))) {
             $query->where('joined_at', '>=', Carbon::now()->sub($within));
@@ -94,25 +125,31 @@ class MemberQuery
                 $query->where(fn (Builder $w) => $w->where('last_seen_at', '<', $cut)->orWhereNull('last_seen_at'));
             }
         }
+    }
 
-        $this->reports->filter($query, $actor, $f);
-
-        // Trust levels 0–4, only for staff Trust Levels lets see them.
-        $levels = array_values(array_unique(array_filter(array_map('intval', array_filter((array) Arr::get($f, 'trust', []), 'is_numeric')), fn ($l) => $l >= 0 && $l <= 4)));
+    /**
+     * Trust levels 0–4, only for staff Trust Levels lets see them.
+     *
+     * @param Builder<User> $query
+     * @param array<int|string, mixed> $trust
+     */
+    protected function trustLevels(Builder $query, User $actor, array $trust): void
+    {
+        $levels = array_values(array_unique(array_filter(array_map('intval', array_filter($trust, 'is_numeric')), fn ($l) => $l >= 0 && $l <= 4)));
         if ($levels && $this->access->trust($actor)) {
             $query->whereIn('trust_level', $levels);
         }
+    }
 
-        $min = Arr::get($f, 'minPosts');
+    /** @param Builder<User> $query */
+    protected function postCounts(Builder $query, mixed $min, mixed $max): void
+    {
         if (is_numeric($min)) {
             $query->where('comment_count', '>=', (int) $min);
         }
-        $max = Arr::get($f, 'maxPosts');
         if (is_numeric($max)) {
             $query->where('comment_count', '<=', (int) $max);
         }
-
-        return $query;
     }
 
     /** @param Builder<User> $query */
@@ -130,34 +167,44 @@ class MemberQuery
         $query->orderBy($column, $direction)->orderBy('id', $direction);
     }
 
-    /** @param Builder<User> $query */
+    /**
+     * Names and emails match from their start, like Flarum's own user search: a prefix uses the
+     * username and email indexes, where "contains" would scan every member on each keystroke.
+     *
+     * @param Builder<User> $query
+     */
     protected function search(Builder $query, User $actor, string $q): void
     {
-        $like = '%'.addcslashes($q, '%_\\').'%';
         $prefix = addcslashes($q, '%_\\').'%';
         $looksLikeIp = (bool) preg_match('/^[0-9a-f.:]+$/i', $q) && (str_contains($q, '.') || str_contains($q, ':'));
         $ips = $looksLikeIp && $this->access->ips($actor);
         $emails = $this->access->emails($actor);
-        $nickname = $this->hasNickname();
+        $nickname = $this->optional->nicknames();
 
-        $query->where(function (Builder $w) use ($like, $prefix, $q, $ips, $emails, $nickname) {
-            $w->where('username', 'like', $like);
+        $query->where(function (Builder $w) use ($prefix, $q, $ips, $emails, $nickname) {
+            $w->where('username', 'like', $prefix);
             if ($nickname) {
-                $w->orWhere('nickname', 'like', $like);
+                $w->orWhere('nickname', 'like', $prefix);
             }
             if ($emails) {
-                $w->orWhere('email', 'like', $like);
+                $w->orWhere('email', 'like', $prefix);
             }
             if ($ips) {
-                $whole = (bool) filter_var($q, FILTER_VALIDATE_IP);
-                $w->orWhereIn('id', fn ($s) => $s->select('user_id')->from('access_tokens')
-                    ->where('last_ip_address', $whole ? '=' : 'like', $whole ? $q : $prefix));
-                // Posts' IP column isn't indexed, so it's matched only on a whole address.
-                if (filter_var($q, FILTER_VALIDATE_IP)) {
-                    $w->orWhereIn('id', fn ($s) => $s->select('user_id')->from('posts')->where('ip_address', $q)->whereNotNull('user_id'));
-                }
+                $this->searchIps($w, $q, $prefix);
             }
         });
+    }
+
+    /** @param Builder<User> $w */
+    protected function searchIps(Builder $w, string $q, string $prefix): void
+    {
+        $whole = (bool) filter_var($q, FILTER_VALIDATE_IP);
+        $w->orWhereIn('id', fn ($s) => $s->select('user_id')->from('access_tokens')
+            ->where('last_ip_address', $whole ? '=' : 'like', $whole ? $q : $prefix));
+        // Posts' IP column isn't indexed, so it's matched only on a whole address.
+        if ($whole) {
+            $w->orWhereIn('id', fn ($s) => $s->select('user_id')->from('posts')->where('ip_address', $q)->whereNotNull('user_id'));
+        }
     }
 
     /** @param Builder<User> $query */
@@ -205,12 +252,5 @@ class MemberQuery
         } catch (\Throwable) {
             return null;
         }
-    }
-
-    protected ?bool $nickname = null;
-
-    protected function hasNickname(): bool
-    {
-        return $this->nickname ??= $this->db->getSchemaBuilder()->hasColumn('users', 'nickname');
     }
 }

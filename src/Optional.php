@@ -27,6 +27,12 @@ class Optional
         return $this->on('flarum-gdpr') && class_exists(\Flarum\Gdpr\Models\ErasureRequest::class);
     }
 
+    /** flarum/nicknames adds users.nickname: searched only while it's on. */
+    public function nicknames(): bool
+    {
+        return $this->on('flarum-nicknames');
+    }
+
     public function suspend(): bool
     {
         return $this->on('flarum-suspend');

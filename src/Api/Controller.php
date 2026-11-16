@@ -6,18 +6,18 @@ use ErnestDefoe\MemberDesk\Access;
 use ErnestDefoe\MemberDesk\Audit\AuditEntry;
 use ErnestDefoe\MemberDesk\Audit\Recorder;
 use ErnestDefoe\MemberDesk\Bulk;
-use ErnestDefoe\MemberDesk\Log;
 use ErnestDefoe\MemberDesk\MemberDetail;
 use ErnestDefoe\MemberDesk\MemberQuery;
 use ErnestDefoe\MemberDesk\Optional;
 use ErnestDefoe\MemberDesk\Presenter;
 use ErnestDefoe\MemberDesk\SavedFilter;
-use Carbon\Carbon;
 use Flarum\Foundation\ValidationException;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\Exception\PermissionDeniedException;
 use Flarum\User\User;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Arr;
 use Laminas\Diactoros\Response\EmptyResponse;
@@ -27,9 +27,19 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 /**
- * Member Desk's API: plain JSON under /api/member-desk, one route name per method
- * (`member-desk.<method>`). Every method checks Access first; nothing here is reachable by a
- * member without `ernestdefoe-member-desk.view` (or admin).
+ * Member Desk's actions and members views: plain JSON under /api/member-desk, one route name per
+ * method (`member-desk.<method>`). Every method checks Access first; nothing here is reachable by
+ * a member without `ernestdefoe-member-desk.view` (or admin).
+ *
+ * Saved filters and the log are ordinary JSON:API resources (SavedFilterResource, LogResource).
+ * What stays here isn't CRUD on one model, so it has no JSON:API shape:
+ * - the list and member page are views over users plus a dozen optional extensions, each part
+ *   gated by the viewer's own permissions (emails, IPs, last seen, hidden groups, trust levels);
+ *   Flarum's users resource would expose its own fields and relationships beside them;
+ * - preview/run/batches are a confirm-then-run action over a filter or a selection, queued when
+ *   large, and run through Flarum's own API as the staff member (Actions);
+ * - export streams a CSV, hash-check answers yes/no against erased members, ban-ip calls
+ *   fof/ban-ips' own API.
  *
  * GET    /member-desk/members            list (filters, sort, page)
  * GET    /member-desk/members/{id}       member page
@@ -37,10 +47,8 @@ use Psr\Http\Server\RequestHandlerInterface;
  * POST   /member-desk/run                run a bulk (or single) action
  * GET    /member-desk/batches/{batch}    a queued batch's progress
  * GET    /member-desk/export             CSV of the filter or selection (streamed)
- * GET    /member-desk/log                the log
  * POST   /member-desk/hash-check         "was it this email/IP?" against erased members
  * POST   /member-desk/ban-ip             ban one IP (fof/ban-ips)
- * GET/POST /member-desk/filters, PATCH/DELETE /member-desk/filters/{id}
  */
 class Controller implements RequestHandlerInterface
 {
@@ -54,8 +62,10 @@ class Controller implements RequestHandlerInterface
         protected Recorder $recorder,
         protected ConnectionInterface $db,
         protected \ErnestDefoe\MemberDesk\BanIps $bans,
-        protected Log $logPresenter,
         protected \ErnestDefoe\MemberDesk\Reports $reports,
+        protected Export $export,
+        protected SettingsRepositoryInterface $settings,
+        protected Container $container,
     ) {
     }
 
@@ -66,7 +76,7 @@ class Controller implements RequestHandlerInterface
         $actor = RequestUtil::getActor($request);
         $this->access->assertView($actor);
 
-        if (! in_array($method, ['list', 'show', 'preview', 'run', 'batch', 'export', 'log', 'hashCheck', 'banIp', 'filters', 'createFilter', 'updateFilter', 'deleteFilter'], true)) {
+        if (! in_array($method, ['list', 'show', 'preview', 'run', 'batch', 'export', 'hashCheck', 'banIp'], true)) {
             throw new \RuntimeException('No method '.$method);
         }
 
@@ -124,11 +134,25 @@ class Controller implements RequestHandlerInterface
             'can' => $this->access->forActor($actor) + ['lastSeen' => $this->access->lastSeen($actor)],
             'reports' => $this->reports->source($actor),
             'trustLevels' => $this->access->trust($actor)
-                ? array_map(fn ($l) => ['level' => $l, 'name' => resolve(\ErnestDefoe\TrustLevels\Names::class)->name($l)], range(0, 4))
+                ? $this->trustLevelNames()
                 : null,
             'filters' => $this->filterList($actor),
+            'retentionDays' => (int) ($this->settings->get('ernestdefoe-member-desk.retention_days') ?: 90),
             'gdprDeletionOff' => $this->optional->gdpr() && ! $this->access->gdprAllows('deletion'),
         ];
+    }
+
+    /**
+     * Trust Levels' names for levels 0–4. Its class exists only while that extension is
+     * installed, so it's made from the container here, after Access::trust() said it's on.
+     *
+     * @return array<int, array{level: int, name: string}>
+     */
+    protected function trustLevelNames(): array
+    {
+        $names = $this->container->make(\ErnestDefoe\TrustLevels\Names::class);
+
+        return array_map(fn ($l) => ['level' => $l, 'name' => $names->name($l)], range(0, 4));
     }
 
     /** @return array<string, mixed> */
@@ -183,33 +207,7 @@ class Controller implements RequestHandlerInterface
             throw new PermissionDeniedException();
         }
 
-        return resolve(Export::class)->respond($actor, $request->getQueryParams());
-    }
-
-    /** @return array<string, mixed> */
-    protected function log(ServerRequestInterface $request, User $actor): array
-    {
-        $p = $request->getQueryParams();
-        $page = max(1, (int) ($p['page'] ?? 1));
-        $q = AuditEntry::query()->with(['actor', 'member']);
-        if (! empty($p['action'])) {
-            $q->where('action', (string) $p['action']);
-        }
-        if (! empty($p['actor'])) {
-            $q->where('actor_id', (int) $p['actor']);
-        }
-        if (! empty($p['user'])) {
-            $q->where('user_id', (int) $p['user']);
-        }
-        $total = (clone $q)->count();
-        $rows = $q->orderByDesc('id')->forPage($page, 50)->get();
-
-        return [
-            'total' => $total,
-            'page' => $page,
-            'rows' => $rows->map(fn (AuditEntry $e) => $this->logPresenter->present($e, $actor))->all(),
-            'retentionDays' => (int) (resolve(\Flarum\Settings\SettingsRepositoryInterface::class)->get('ernestdefoe-member-desk.retention_days') ?: 90),
-        ];
+        return $this->export->respond($actor, $request->getQueryParams());
     }
 
     /** @return array<string, mixed> */
@@ -272,77 +270,5 @@ class Controller implements RequestHandlerInterface
             ->where(fn ($w) => $w->where('shared', true)->orWhere('user_id', $actor->id))
             ->orderBy('position')->orderBy('id')->get()
             ->map(fn (SavedFilter $f) => $f->present($actor))->all();
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    protected function filters(ServerRequestInterface $request, User $actor): array
-    {
-        return $this->filterList($actor);
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    protected function createFilter(ServerRequestInterface $request, User $actor): array
-    {
-        $b = $this->body($request);
-        $f = new SavedFilter();
-        $f->user_id = $actor->id;
-        $this->fillFilter($f, $b, $actor);
-        $f->position = (int) SavedFilter::query()->max('position') + 1;
-        $f->created_at = Carbon::now();
-        $f->save();
-
-        return $this->filterList($actor);
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    protected function updateFilter(ServerRequestInterface $request, User $actor): array
-    {
-        $f = $this->ownFilter($request, $actor);
-        $this->fillFilter($f, $this->body($request), $actor, true);
-        $f->save();
-
-        return $this->filterList($actor);
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    protected function deleteFilter(ServerRequestInterface $request, User $actor): array
-    {
-        $this->ownFilter($request, $actor)->delete();
-
-        return $this->filterList($actor);
-    }
-
-    protected function ownFilter(ServerRequestInterface $request, User $actor): SavedFilter
-    {
-        $f = SavedFilter::query()->findOrFail($this->id($request));
-        // Your own, or a shared one if you're an admin.
-        if ($f->user_id !== $actor->id && ! ($f->shared && $actor->isAdmin())) {
-            throw new PermissionDeniedException();
-        }
-
-        return $f;
-    }
-
-    /** @param array<string, mixed> $b */
-    protected function fillFilter(SavedFilter $f, array $b, User $actor, bool $partial = false): void
-    {
-        if (! $partial || array_key_exists('name', $b)) {
-            $name = trim((string) ($b['name'] ?? ''));
-            if ($name === '' || mb_strlen($name) > 80) {
-                throw new ValidationException(['name' => 'Give the filter a name (up to 80 characters).']);
-            }
-            $f->name = $name;
-        }
-        if (! $partial || array_key_exists('query', $b)) {
-            $q = Arr::only((array) ($b['query'] ?? []), ['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts', 'reportedMin', 'reportedWithin', 'trust', 'sort', 'dir']);
-            $f->query = json_encode($q) ?: '{}';
-        }
-        if (array_key_exists('shared', $b)) {
-            // Only admins share filters with every staff member.
-            $f->shared = (bool) $b['shared'] && $actor->isAdmin();
-        }
-        if (array_key_exists('position', $b)) {
-            $f->position = max(0, (int) $b['position']);
-        }
     }
 }

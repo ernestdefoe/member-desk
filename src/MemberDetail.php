@@ -95,7 +95,9 @@ class MemberDetail
                 foreach ($rows as $row) {
                     $fields[] = ['name' => $row->name, 'icon' => $row->icon, 'value' => $row->content];
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                // fof/masquerade's tables differ between its versions: no fields, logged.
+                $this->log->warning('[member-desk] could not read fof/masquerade fields for member '.$m->id.': '.$e->getMessage());
                 $fields = [];
             }
         }
@@ -113,22 +115,6 @@ class MemberDetail
     /** @return array<string, mixed> */
     protected function activity(User $actor, User $m): array
     {
-        $since = Carbon::now()->startOfMonth()->subMonths(11);
-        $dates = $this->db->table('posts')
-            ->where('user_id', $m->id)->where('type', 'comment')->where('created_at', '>=', $since)
-            ->pluck('created_at');
-
-        $months = [];
-        for ($i = 0; $i < 12; $i++) {
-            $months[$since->copy()->addMonths($i)->format('Y-m')] = 0;
-        }
-        foreach ($dates as $d) {
-            $key = Carbon::parse($d)->format('Y-m');
-            if (isset($months[$key])) {
-                $months[$key]++;
-            }
-        }
-
         // CommentPost::query() is NOT limited to comments: Flarum builds each row as its own type,
         // so a "renamed the discussion" event post came back too (and has no formatted content).
         $posts = CommentPost::query()->whereVisibleTo($actor)
@@ -140,17 +126,8 @@ class MemberDetail
             ->where('discussions.user_id', $m->id)
             ->orderByDesc('discussions.created_at')->limit(5)->get();
 
-        $likes = null;
-        if ($this->optional->likes()) {
-            $given = $this->db->table('post_likes')->where('user_id', $m->id)->count();
-            $received = $this->db->table('post_likes')
-                ->whereIn('post_id', fn ($q) => $q->select('id')->from('posts')->where('user_id', $m->id))
-                ->count();
-            $likes = ['given' => $given, 'received' => $received];
-        }
-
         return [
-            'months' => collect($months)->map(fn ($n, $k) => ['month' => $k, 'posts' => $n])->values()->all(),
+            'months' => $this->months($m),
             'posts' => $posts->map(fn (Post $p) => [
                 'id' => $p->id,
                 'number' => $p->number,
@@ -167,7 +144,44 @@ class MemberDetail
                 'replies' => max(0, (int) $d->comment_count - 1),
                 'createdAt' => Presenter::date($d->created_at),
             ])->all(),
-            'likes' => $likes,
+            'likes' => $this->optional->likes() ? $this->likes($m) : null,
+        ];
+    }
+
+    /**
+     * Comments per month for the last 12 months, oldest first.
+     *
+     * @return array<int, array{month: string, posts: int}>
+     */
+    protected function months(User $m): array
+    {
+        $since = Carbon::now()->startOfMonth()->subMonths(11);
+        $dates = $this->db->table('posts')
+            ->where('user_id', $m->id)->where('type', 'comment')->where('created_at', '>=', $since)
+            ->pluck('created_at');
+
+        $months = [];
+        for ($i = 0; $i < 12; $i++) {
+            $months[$since->copy()->addMonths($i)->format('Y-m')] = 0;
+        }
+        foreach ($dates as $d) {
+            $key = Carbon::parse($d)->format('Y-m');
+            if (isset($months[$key])) {
+                $months[$key]++;
+            }
+        }
+
+        return collect($months)->map(fn ($n, $k) => ['month' => $k, 'posts' => $n])->values()->all();
+    }
+
+    /** @return array{given: int, received: int} */
+    protected function likes(User $m): array
+    {
+        return [
+            'given' => $this->db->table('post_likes')->where('user_id', $m->id)->count(),
+            'received' => $this->db->table('post_likes')
+                ->whereIn('post_id', fn ($q) => $q->select('id')->from('posts')->where('user_id', $m->id))
+                ->count(),
         ];
     }
 
@@ -245,57 +259,16 @@ class MemberDetail
      */
     protected function ips(User $m): array
     {
-        $byIp = [];
-        $tokens = $this->db->table('access_tokens')->where('user_id', $m->id)->whereNotNull('last_ip_address')
-            ->get(['last_ip_address', 'created_at', 'last_activity_at']);
-        foreach ($tokens as $t) {
-            $ip = (string) $t->last_ip_address;
-            $e = $byIp[$ip] ??= ['ip' => $ip, 'sources' => [], 'count' => 0, 'firstSeen' => null, 'lastSeen' => null];
-            $e['sources']['sessions'] = true;
-            $e['count']++;
-            $e['firstSeen'] = $this->min($e['firstSeen'], $t->created_at);
-            $e['lastSeen'] = $this->max($e['lastSeen'], $t->last_activity_at ?? $t->created_at);
-            $byIp[$ip] = $e;
-        }
-
-        $posts = $this->db->table('posts')->where('user_id', $m->id)->whereNotNull('ip_address')
-            ->groupBy('ip_address')
-            ->selectRaw('ip_address, count(*) as n, min(created_at) as first_at, max(created_at) as last_at')
-            ->orderByRaw('max(created_at) desc')->limit(100)->get();
-        foreach ($posts as $p) {
-            $ip = (string) $p->ip_address;
-            $e = $byIp[$ip] ??= ['ip' => $ip, 'sources' => [], 'count' => 0, 'firstSeen' => null, 'lastSeen' => null];
-            $e['sources']['posts'] = true;
-            $e['count'] += (int) $p->n;
-            $e['firstSeen'] = $this->min($e['firstSeen'], $p->first_at);
-            $e['lastSeen'] = $this->max($e['lastSeen'], $p->last_at);
-            $byIp[$ip] = $e;
-        }
-
+        $byIp = $this->ipUses($m);
         if (! $byIp) {
             return [];
         }
 
         uasort($byIp, fn ($a, $b) => strcmp((string) $b['lastSeen'], (string) $a['lastSeen']));
         $byIp = array_slice($byIp, 0, 50, true);
-        $list = array_keys($byIp);
-
-        $others = [];
-        $pairs = $this->db->table('access_tokens')->whereIn('last_ip_address', $list)->where('user_id', '<>', $m->id)
-            ->distinct()->get(['last_ip_address as ip', 'user_id'])
-            ->merge($this->db->table('posts')->whereIn('ip_address', $list)->whereNotNull('user_id')->where('user_id', '<>', $m->id)
-                ->distinct()->limit(500)->get(['ip_address as ip', 'user_id']));
-        foreach ($pairs as $pair) {
-            $others[(string) $pair->ip][(int) $pair->user_id] = true;
-        }
-
-        $userIds = collect($others)->flatMap(fn ($ids) => array_keys($ids))->unique()->take(200)->all();
-        $users = $userIds ? User::query()->whereIn('id', $userIds)->get()->keyBy('id') : collect();
-
-        $banned = [];
-        if ($this->optional->banIps()) {
-            $banned = $this->db->table('banned_ips')->whereIn('address', $list)->pluck('address')->flip()->all();
-        }
+        $list = array_map('strval', array_keys($byIp));
+        [$others, $users] = $this->sharedWith($m, $list);
+        $banned = $this->optional->banIps() ? $this->db->table('banned_ips')->whereIn('address', $list)->pluck('address')->flip()->all() : [];
 
         $out = [];
         foreach ($byIp as $ip => $e) {
@@ -315,6 +288,63 @@ class MemberDetail
         }
 
         return $out;
+    }
+
+    /**
+     * The member's IPs from sessions and posts (latest 100 post IPs), with counts and dates.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function ipUses(User $m): array
+    {
+        $byIp = [];
+        $add = function (string $ip, string $source, int $n, mixed $first, mixed $last) use (&$byIp) {
+            $e = $byIp[$ip] ?? ['ip' => $ip, 'sources' => [], 'count' => 0, 'firstSeen' => null, 'lastSeen' => null];
+            $e['sources'][$source] = true;
+            $e['count'] += $n;
+            $e['firstSeen'] = $this->min($e['firstSeen'], $first);
+            $e['lastSeen'] = $this->max($e['lastSeen'], $last);
+            $byIp[$ip] = $e;
+        };
+
+        $tokens = $this->db->table('access_tokens')->where('user_id', $m->id)->whereNotNull('last_ip_address')
+            ->get(['last_ip_address', 'created_at', 'last_activity_at']);
+        foreach ($tokens as $t) {
+            $add((string) $t->last_ip_address, 'sessions', 1, $t->created_at, $t->last_activity_at ?? $t->created_at);
+        }
+
+        $posts = $this->db->table('posts')->where('user_id', $m->id)->whereNotNull('ip_address')
+            ->groupBy('ip_address')
+            ->selectRaw('ip_address, count(*) as n, min(created_at) as first_at, max(created_at) as last_at')
+            ->orderByRaw('max(created_at) desc')->limit(100)->get();
+        foreach ($posts as $p) {
+            $add((string) $p->ip_address, 'posts', (int) $p->n, $p->first_at, $p->last_at);
+        }
+
+        return $byIp;
+    }
+
+    /**
+     * Other accounts seen on these IPs: [ip => [userId => true]], and those users (up to 200).
+     *
+     * @param string[] $list
+     * @return array{0: array<string, array<int, bool>>, 1: \Illuminate\Support\Collection<int, User>}
+     */
+    protected function sharedWith(User $m, array $list): array
+    {
+        $others = [];
+        $pairs = $this->db->table('access_tokens')->whereIn('last_ip_address', $list)->where('user_id', '<>', $m->id)
+            ->distinct()->get(['last_ip_address as ip', 'user_id'])
+            ->merge($this->db->table('posts')->whereIn('ip_address', $list)->whereNotNull('user_id')->where('user_id', '<>', $m->id)
+                ->distinct()->limit(500)->get(['ip_address as ip', 'user_id']));
+        foreach ($pairs as $pair) {
+            $others[(string) $pair->ip][(int) $pair->user_id] = true;
+        }
+
+        $userIds = collect($others)->flatMap(fn ($ids) => array_keys($ids))->unique()->take(200)->all();
+        $users = $userIds ? User::query()->whereIn('id', $userIds)->get()->keyBy('id') : collect();
+
+        return [$others, $users];
     }
 
     protected function min(mixed $a, mixed $b): mixed

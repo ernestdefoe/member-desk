@@ -59,6 +59,10 @@ Groups, suspensions and email verification use Flarum's own permissions (edit gr
 
 Every action is written to the log before it runs. When a member is anonymized or deleted, their email and IP addresses are kept only as HMAC-SHA256 hashes salted with a secret only your forum has: **pseudonymous, not anonymous** (someone holding both your database and that secret could test guesses). An admin can check whether an address belonged to an erased member, but can't read it back. After 90 days (you can change this) even the names and hashes are removed. Staff see only what their own permissions allow: last-seen times, hidden groups, IPs and suspension reasons follow the same rules as everywhere else.
 
+## For developers
+
+Saved filters and the log are JSON:API resources: `member-desk-filters` and `member-desk-log` under `/api`. The member list, the member page, bulk actions, CSV export, the hash check and IP bans are plain JSON under `/api/member-desk`. They aren't create/read/update/delete on one model. Each is a view over members and up to a dozen optional extensions, cut down to what the viewer's own permissions allow (emails, IPs, last seen, hidden groups, trust levels), or an action that runs through Flarum's own API as the staff member. Other extensions can add buttons to the member page header (`MemberView.prototype.heroActions`).
+
 ## Works with
 
 flarum/gdpr, flarum/suspend, flarum/audit, flarum/flags, ernestdefoe/docket, fof/ban-ips, fof/moderator-notes, fof/moderator-warnings and fof/masquerade, each only when it's installed.

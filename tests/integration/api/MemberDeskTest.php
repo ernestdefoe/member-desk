@@ -98,6 +98,30 @@ class MemberDeskTest extends TestCase
         return [$response->getStatusCode(), json_decode($raw, true) ?? $raw];
     }
 
+    /** A JSON:API call: /api/<path>, the body wrapped as {data: {type, attributes}}. */
+    private function jsonapi(string $method, string $path, ?int $as, ?string $type = null, array $attributes = []): array
+    {
+        $options = $as ? ['authenticatedAs' => $as] : [];
+        if ($type) {
+            $options['json'] = ['data' => ['type' => $type, 'attributes' => $attributes]];
+        }
+        [$route, $query] = array_pad(explode('?', $path, 2), 2, '');
+        parse_str($query, $params);
+        $response = $this->send($this->request($method, '/api/'.$route, $options)->withQueryParams($params));
+        $raw = (string) $response->getBody();
+
+        return [$response->getStatusCode(), json_decode($raw, true) ?? $raw];
+    }
+
+    /** The log as the viewer sees it: each entry's attributes. */
+    private function log(int $as): array
+    {
+        [$status, $body] = $this->jsonapi('GET', 'member-desk-log', $as);
+        $this->assertSame(200, $status);
+
+        return array_column($body['data'], 'attributes');
+    }
+
     private function db(): ConnectionInterface
     {
         return $this->app()->getContainer()->make(ConnectionInterface::class);
@@ -131,11 +155,14 @@ class MemberDeskTest extends TestCase
         // No flags and no Docket here: no report column, no Reports tab.
         $this->assertNull($body['rows'][0]['reports']);
 
-        // Searching an email fragment must not answer for a moderator (it would leak the address).
-        [, $body] = $this->call('GET', '/members?q=machine.local', 3);
+        // Searching an email must not answer for a moderator (it would leak the address).
+        [, $body] = $this->call('GET', '/members?q=quiet@mach', 3);
         $this->assertSame(0, $body['total']);
+        [, $admin] = $this->call('GET', '/members?q=quiet@mach', 1);
+        $this->assertSame(1, $admin['total']);
+        // Names and emails match from their start (indexed), never from the middle.
         [, $admin] = $this->call('GET', '/members?q=machine.local', 1);
-        $this->assertGreaterThan(0, $admin['total']);
+        $this->assertSame(0, $admin['total']);
 
         // Hidden online status: the last-seen time is not sent to staff without user.viewLastSeenAt.
         [, $body] = $this->call('GET', '/members?q=quiet', 3);
@@ -181,17 +208,23 @@ class MemberDeskTest extends TestCase
         $this->db()->table('group_permission')->where('permission', 'user.suspend')->delete();
 
         foreach (['/log', '/members/7', '/members/6'] as $path) {
-            [$status, $mod] = $this->call('GET', $path, 3);
-            $this->assertSame(200, $status);
-            $json = json_encode($path === '/log' ? $mod['rows'] : $mod['log']);
+            if ($path === '/log') {
+                $json = json_encode($this->log(3));
+            } else {
+                [$status, $mod] = $this->call('GET', $path, 3);
+                $this->assertSame(200, $status);
+                $json = json_encode($mod['log']);
+            }
             $this->assertStringNotContainsString('lastSeenAt', $json, "$path: last seen");
             $this->assertStringNotContainsString('Secret', $json, "$path: hidden group name");
             $this->assertStringNotContainsString('"group":11', $json, "$path: hidden group id");
             $this->assertStringNotContainsString('STAFF-ONLY-REASON', $json, "$path: suspend reason");
         }
 
-        [, $admin] = $this->call('GET', '/log', 1);
-        $json = json_encode($admin['rows']);
+        $json = json_encode($this->log(1));
+        [, $spam] = $this->jsonapi('GET', 'member-desk-log?filter[action]=spammer', 1);
+        $this->assertSame(['spammer'], array_values(array_unique(array_column(array_column($spam['data'], 'attributes'), 'action'))));
+        $this->assertSame(1, $spam['meta']['page']['total']);
         $this->assertStringContainsString('lastSeenAt', $json);
         $this->assertStringContainsString('Secret', $json);
         $this->assertStringContainsString('STAFF-ONLY-REASON', $json);
@@ -369,8 +402,7 @@ class MemberDeskTest extends TestCase
         $this->assertSame(403, $status);
 
         // The log never sends a hash to the browser.
-        [, $log] = $this->call('GET', '/log', 1);
-        $this->assertStringNotContainsString($entry->before['emailHash'], json_encode($log));
+        $this->assertStringNotContainsString($entry->before['emailHash'], json_encode($this->log(1)));
     }
 
     #[Test]
@@ -396,15 +428,31 @@ class MemberDeskTest extends TestCase
     #[Test]
     public function saved_filters_are_private_unless_an_admin_shares_them(): void
     {
-        [, $list] = $this->call('POST', '/filters', 3, ['name' => 'Mine', 'shared' => true, 'query' => ['status' => ['unconfirmed']]]);
-        $mine = collect($list)->firstWhere('name', 'Mine');
-        $this->assertFalse($mine['shared'], 'a moderator cannot share');
+        [$status, $created] = $this->jsonapi('POST', 'member-desk-filters', 3, 'member-desk-filters', ['name' => 'Mine', 'shared' => true, 'query' => ['status' => ['unconfirmed'], 'evil' => 1]]);
+        $this->assertSame(201, $status);
+        $id = $created['data']['id'];
+        $this->assertFalse($created['data']['attributes']['shared'], 'a moderator cannot share');
+        $this->assertSame(['status' => ['unconfirmed']], $created['data']['attributes']['query'], 'only filter keys are kept');
 
-        [, $adminList] = $this->call('GET', '/filters', 1);
-        $this->assertNull(collect($adminList)->firstWhere('name', 'Mine'));
+        $names = fn (int $as) => array_column(array_column($this->jsonapi('GET', 'member-desk-filters', $as)[1]['data'], 'attributes'), 'name');
+        $this->assertContains('Mine', $names(3));
+        $this->assertNotContains('Mine', $names(1), 'a private filter stays private, even from admins');
 
-        [$status] = $this->call('DELETE', '/filters/'.$mine['id'], 1);
+        [$status] = $this->jsonapi('DELETE', 'member-desk-filters/'.$id, 1);
+        $this->assertSame(404, $status);
+        $this->assertSame([], $names(2), 'members without Member Desk get nothing');
+        $this->assertSame([], $this->jsonapi('GET', 'member-desk-log', 2)[1]['data']);
+        [$status] = $this->jsonapi('POST', 'member-desk-filters', 2, 'member-desk-filters', ['name' => 'Sneaky', 'query' => []]);
         $this->assertSame(403, $status);
+
+        // An admin's shared filter: every staff member sees it, only admins change it.
+        [, $shared] = $this->jsonapi('POST', 'member-desk-filters', 1, 'member-desk-filters', ['name' => 'Team', 'shared' => true, 'query' => []]);
+        $this->assertTrue($shared['data']['attributes']['shared']);
+        $this->assertContains('Team', $names(3));
+        [$status] = $this->jsonapi('DELETE', 'member-desk-filters/'.$shared['data']['id'], 3);
+        $this->assertSame(403, $status);
+        [$status] = $this->jsonapi('DELETE', 'member-desk-filters/'.$id, 3);
+        $this->assertSame(204, $status);
     }
 
     #[Test]

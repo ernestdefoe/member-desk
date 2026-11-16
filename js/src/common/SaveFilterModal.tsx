@@ -1,7 +1,7 @@
 import FormModal, { type IFormModalAttrs } from 'flarum/common/components/FormModal';
 import Button from 'flarum/common/components/Button';
 import type Mithril from 'mithril';
-import { api, errorText, t } from './util';
+import { errorText, jsonApi, savedFilters, t } from './util';
 
 export interface SaveFilterAttrs extends IFormModalAttrs {
   isAdmin: boolean;
@@ -57,8 +57,9 @@ export default class SaveFilterModal extends FormModal<SaveFilterAttrs> {
   onsubmit(e: SubmitEvent) {
     e.preventDefault();
     this.loading = true;
-    api('POST', '/filters', { name: this.name.trim(), shared: this.shared, query: this.attrs.query })
-      .then((filters: any) => {
+    jsonApi('POST', 'member-desk-filters', { name: this.name.trim(), shared: this.shared, query: this.attrs.query })
+      .then(() => savedFilters())
+      .then((filters: any[]) => {
         this.attrs.onSaved(filters);
         this.hide();
       })

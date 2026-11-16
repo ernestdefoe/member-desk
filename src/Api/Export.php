@@ -41,59 +41,21 @@ class Export
         $query = $ids ? User::query()->whereIn('id', $ids) : $this->query->build($actor, $params);
         $this->query->sort($query, $actor, $params['sort'] ?? null, $params['dir'] ?? null);
 
-        $ips = $this->access->ips($actor);
-        $suspend = $this->optional->suspend();
-        $gdpr = $this->optional->gdpr();
-
+        $cols = ['ips' => $this->access->ips($actor), 'suspend' => $this->optional->suspend(), 'gdpr' => $this->optional->gdpr()];
         $out = fopen('php://temp', 'w+');
-        $head = ['ID', 'Username', 'Display name', 'Email', 'Email verified', 'Groups', 'Joined', 'Last seen', 'Posts', 'Discussions'];
-        if ($ips) {
-            $head[] = 'Last IP';
-        }
-        if ($suspend) {
-            $head[] = 'Suspended until';
-        }
-        if ($gdpr) {
-            $head[] = 'Anonymized';
-        }
-        fputcsv($out, $head, ',', '"', '');
+        fputcsv($out, $this->head($cols), ',', '"', '');
 
         $count = 0;
-        $query->with('groups')->chunk(500, function ($members) use ($out, $actor, $ips, $suspend, $gdpr, &$count) {
-            $lastIps = $ips ? $this->presenter->lastIps($members->pluck('id')->all()) : [];
-            foreach ($members as $m) {
-                /** @var User $m */
-                $row = [
-                    $m->id,
-                    $m->username,
-                    $m->display_name,
-                    $m->email,
-                    $m->is_email_confirmed ? 'yes' : 'no',
-                    $m->groups->pluck('name_singular')->implode('; '),
-                    $m->joined_at?->toDateTimeString(),
-                    $this->presenter->lastSeen($actor, $m) ? $m->last_seen_at?->toDateTimeString() : '',
-                    (int) $m->comment_count,
-                    (int) $m->discussion_count,
-                ];
-                if ($ips) {
-                    $row[] = $lastIps[$m->id] ?? '';
-                }
-                if ($suspend) {
-                    $row[] = $this->presenter->suspendedUntil($m) ?? '';
-                }
-                if ($gdpr) {
-                    $row[] = $m->getAttribute('anonymized') ? 'yes' : 'no';
-                }
-                fputcsv($out, array_map([$this, 'safe'], $row), ',', '"', '');
+        $query->with('groups')->chunk(500, function ($members) use ($out, $actor, $cols, &$count) {
+            $lastIps = $cols['ips'] ? $this->presenter->lastIps($members->pluck('id')->all()) : [];
+            foreach ($members as $member) {
+                /** @var User $member */
+                fputcsv($out, array_map([$this, 'safe'], $this->row($actor, $member, $cols, $lastIps)), ',', '"', '');
                 $count++;
             }
         });
 
-        ksort($params);
-        $once = 'member-desk.export.'.$actor->id.'.'.sha1((string) json_encode($params));
-        if ($this->cache->add($once, 1, 60)) {
-            $this->recorder->record($actor, 'export', null, null, ['rows' => $count, 'filters' => $ids ? ['ids' => count($ids)] : array_intersect_key($params, array_flip(['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts']))]);
-        }
+        $this->logOnce($actor, $params, $ids, $count);
 
         rewind($out);
         $name = 'members-'.Carbon::now()->format('Y-m-d').'.csv';
@@ -102,6 +64,59 @@ class Export
             ->withHeader('Content-Type', 'text/csv; charset=utf-8')
             ->withHeader('Content-Disposition', 'attachment; filename="'.$name.'"')
             ->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * @param array<string, bool> $cols
+     * @return string[]
+     */
+    protected function head(array $cols): array
+    {
+        return array_merge(
+            ['ID', 'Username', 'Display name', 'Email', 'Email verified', 'Groups', 'Joined', 'Last seen', 'Posts', 'Discussions'],
+            $cols['ips'] ? ['Last IP'] : [],
+            $cols['suspend'] ? ['Suspended until'] : [],
+            $cols['gdpr'] ? ['Anonymized'] : [],
+        );
+    }
+
+    /**
+     * @param array<string, bool> $cols
+     * @param array<int, string> $lastIps
+     * @return array<int, mixed>
+     */
+    protected function row(User $actor, User $m, array $cols, array $lastIps): array
+    {
+        return array_merge(
+            [
+                $m->id,
+                $m->username,
+                $m->display_name,
+                $m->email,
+                $m->is_email_confirmed ? 'yes' : 'no',
+                $m->groups->pluck('name_singular')->implode('; '),
+                $m->joined_at?->toDateTimeString(),
+                $this->presenter->lastSeen($actor, $m) ? $m->last_seen_at?->toDateTimeString() : '',
+                (int) $m->comment_count,
+                (int) $m->discussion_count,
+            ],
+            $cols['ips'] ? [$lastIps[$m->id] ?? ''] : [],
+            $cols['suspend'] ? [$this->presenter->suspendedUntil($m) ?? ''] : [],
+            $cols['gdpr'] ? [$m->getAttribute('anonymized') ? 'yes' : 'no'] : [],
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @param int[] $ids
+     */
+    protected function logOnce(User $actor, array $params, array $ids, int $count): void
+    {
+        ksort($params);
+        $once = 'member-desk.export.'.$actor->id.'.'.sha1((string) json_encode($params));
+        if ($this->cache->add($once, 1, 60)) {
+            $this->recorder->record($actor, 'export', null, null, ['rows' => $count, 'filters' => $ids ? ['ids' => count($ids)] : array_intersect_key($params, array_flip(['q', 'groups', 'status', 'joinedFrom', 'joinedTo', 'seenFrom', 'seenTo', 'joinedWithin', 'notSeenFor', 'minPosts', 'maxPosts']))]);
+        }
     }
 
     public function safe(mixed $value): string
