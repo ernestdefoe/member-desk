@@ -8,6 +8,7 @@ use ErnestDefoe\MemberDesk\Presenter;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\User;
 use Illuminate\Database\ConnectionInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Writes Member Desk's log, and mirrors each entry into flarum/audit when it's installed.
@@ -24,6 +25,7 @@ class Recorder
         protected SettingsRepositoryInterface $settings,
         protected Optional $optional,
         protected ConnectionInterface $db,
+        protected LoggerInterface $log,
     ) {
     }
 
@@ -64,8 +66,9 @@ class Recorder
                 'user_id' => $userId,
                 'batch' => $batch,
             ]));
-        } catch (\Throwable) {
-            // The audit extension's own trouble never stops a Member Desk action.
+        } catch (\Throwable $e) {
+            // The audit extension's own trouble never stops a Member Desk action, but it is logged.
+            $this->log->warning('[member-desk] flarum/audit could not log member_desk.'.$action.': '.$e->getMessage());
         }
     }
 
