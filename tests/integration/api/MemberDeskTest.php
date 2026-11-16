@@ -406,6 +406,69 @@ class MemberDeskTest extends TestCase
     }
 
     #[Test]
+    public function hash_check_finds_an_old_erasure_among_thousands_without_reading_them(): void
+    {
+        $this->call('POST', '/run', 1, ['action' => 'delete', 'target' => ['ids' => [6]]]);
+        $target = AuditEntry::query()->where('action', 'delete')->value('id');
+        $this->assertTrue($this->db()->table('member_desk_audit_hashes')->where('audit_id', $target)->exists());
+
+        // 5,100 newer erasures, each with its own hash: the old 5,000-row window would miss the target.
+        $now = Carbon::now();
+        foreach (array_chunk(range(1, 5100), 500) as $chunk) {
+            $this->db()->table('member_desk_audit')->insert(array_map(fn ($i) => [
+                'action' => 'delete', 'status' => 'done', 'erased' => true, 'created_at' => $now,
+                'before' => json_encode(['id' => 1000 + $i, 'emailHash' => hash('sha256', "other$i")]),
+            ], $chunk));
+        }
+        $this->db()->table('member_desk_audit_hashes')->insertUsing(
+            ['audit_id', 'hash'],
+            $this->db()->table('member_desk_audit')->where('id', '>', $target)->select('id', $this->db()->raw('id'))
+        );
+
+        $queries = [];
+        $this->db()->listen(function ($q) use (&$queries) {
+            $queries[] = $q->sql;
+        });
+        [$status, $found] = $this->call('POST', '/hash-check', 1, ['value' => 'innocent@machine.local']);
+        $this->assertSame(200, $status, json_encode($found));
+        $this->assertSame([$target], array_column($found['matches'], 'id'));
+
+        $audit = array_values(array_filter($queries, fn ($sql) => preg_match('/from [`"]?\w*member_desk_audit[`"]? /', $sql) && str_starts_with($sql, 'select')));
+        $this->assertCount(1, $audit, implode("\n", $queries));
+        $this->assertStringContainsString(' in (', $audit[0], 'only the matching entries are read');
+    }
+
+    #[Test]
+    public function the_migration_backfills_hashes_from_existing_entries(): void
+    {
+        $this->call('POST', '/run', 1, ['action' => 'delete', 'target' => ['ids' => [6]]]);
+        $entry = AuditEntry::query()->where('action', 'delete')->first();
+        $this->db()->table('member_desk_audit_hashes')->delete();
+
+        $migration = require __DIR__.'/../../../migrations/2026_11_16_000001_create_member_desk_audit_hashes_table.php';
+        $migration['up']($this->db()->getSchemaBuilder());
+
+        $kept = $this->db()->table('member_desk_audit_hashes')->where('audit_id', $entry->id)->pluck('hash')->all();
+        $this->assertEqualsCanonicalizing(array_merge([$entry->before['emailHash']], $entry->before['ipHashes']), $kept);
+    }
+
+    #[Test]
+    public function a_missing_salt_is_generated_and_saved_before_anything_is_hashed(): void
+    {
+        $this->setting('ernestdefoe-member-desk.salt', '');
+        $this->call('POST', '/run', 1, ['action' => 'delete', 'target' => ['ids' => [6]]]);
+
+        $salt = (string) $this->db()->table('settings')->where('key', 'ernestdefoe-member-desk.salt')->value('value');
+        $this->assertSame(64, strlen($salt));
+        $entry = AuditEntry::query()->where('action', 'delete')->first();
+        $this->assertSame(hash_hmac('sha256', 'innocent@machine.local', $salt), $entry->before['emailHash']);
+        $this->assertNotSame(hash_hmac('sha256', 'innocent@machine.local', ''), $entry->before['emailHash']);
+
+        [, $found] = $this->call('POST', '/hash-check', 1, ['value' => 'innocent@machine.local']);
+        $this->assertCount(1, $found['matches'], 'the saved salt is reused');
+    }
+
+    #[Test]
     public function prune_strips_erased_entries_after_the_retention_period(): void
     {
         $this->call('POST', '/run', 1, ['action' => 'delete', 'target' => ['ids' => [6]]]);
@@ -421,8 +484,11 @@ class MemberDeskTest extends TestCase
         $this->assertArrayNotHasKey('username', $old->before);
         $this->assertArrayNotHasKey('emailHash', $old->before);
 
+        $this->assertFalse($this->db()->table('member_desk_audit_hashes')->where('audit_id', $old->id)->exists(), 'the hash rows go too');
+
         $recent = AuditEntry::query()->where('user_id', 7)->first();
         $this->assertSame('quiet', $recent->before['username']);
+        $this->assertTrue($this->db()->table('member_desk_audit_hashes')->where('audit_id', $recent->id)->exists());
     }
 
     #[Test]

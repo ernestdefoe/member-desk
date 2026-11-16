@@ -4,6 +4,7 @@ namespace ErnestDefoe\MemberDesk\Console;
 
 use Carbon\Carbon;
 use ErnestDefoe\MemberDesk\Audit\AuditEntry;
+use ErnestDefoe\MemberDesk\Audit\Recorder;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
 
@@ -17,7 +18,7 @@ class PruneCommand extends Command
 
     protected $description = 'Strip names and hashes from erased members\' Member Desk log entries past the retention period.';
 
-    public function handle(SettingsRepositoryInterface $settings): int
+    public function handle(SettingsRepositoryInterface $settings, Recorder $recorder): int
     {
         $days = max(1, (int) ($settings->get('ernestdefoe-member-desk.retention_days') ?: 90));
         $cut = Carbon::now()->subDays($days);
@@ -25,7 +26,8 @@ class PruneCommand extends Command
 
         AuditEntry::query()->where('erased', true)->where('created_at', '<', $cut)
             ->whereNotNull('before')
-            ->chunkById(200, function ($entries) use (&$pruned) {
+            ->chunkById(200, function ($entries) use (&$pruned, $recorder) {
+                $recorder->forgetHashes($entries->modelKeys());
                 foreach ($entries as $entry) {
                     /** @var AuditEntry $entry */
                     $before = $entry->before ?? [];

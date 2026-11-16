@@ -220,11 +220,9 @@ class Controller implements RequestHandlerInterface
         if ($value === '' || mb_strlen($value) > 255) {
             throw new ValidationException(['value' => 'Enter an email address or IP.']);
         }
-        $hash = $this->recorder->hash($value);
-
-        $matches = AuditEntry::query()->where('erased', true)->whereNotNull('before')->orderByDesc('id')->limit(5000)->get()
-            ->filter(fn (AuditEntry $e) => ($e->before['emailHash'] ?? null) === $hash || in_array($hash, $e->before['ipHashes'] ?? [], true))
-            ->take(20)
+        // An indexed lookup in member_desk_audit_hashes, then only the matching entries are read.
+        $ids = $this->recorder->entriesWithHash($value, 20);
+        $matches = ($ids ? AuditEntry::query()->where('erased', true)->whereIn('id', $ids)->orderByDesc('id')->get() : collect())
             ->map(fn (AuditEntry $e) => ['id' => $e->id, 'action' => $e->action, 'userId' => $e->user_id, 'username' => $e->before['username'] ?? null, 'createdAt' => $e->created_at->toIso8601String()])
             ->values()->all();
 

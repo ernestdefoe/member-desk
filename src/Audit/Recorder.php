@@ -8,6 +8,7 @@ use ErnestDefoe\MemberDesk\Presenter;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\User;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -46,6 +47,9 @@ class Recorder
         $entry->erased = $erased;
         $entry->created_at = Carbon::now();
         $entry->save();
+        if ($erased) {
+            $this->keepHashes($entry);
+        }
 
         $this->mirror($actor, $action, $userId, $batch);
 
@@ -87,14 +91,55 @@ class Recorder
                     $entry->before = $before ?: null;
                     $entry->save();
                 }
+                $this->forgetHashes($entries->modelKeys());
             });
+    }
+
+    /** The erasure entry's hashes, one indexed row each, for hash-check's lookup. */
+    protected function keepHashes(AuditEntry $entry): void
+    {
+        $hashes = array_merge([$entry->before['emailHash'] ?? null], (array) ($entry->before['ipHashes'] ?? []));
+        $rows = array_map(fn (string $h) => ['audit_id' => $entry->id, 'hash' => $h], array_values(array_unique(array_filter($hashes, 'is_string'))));
+        if ($rows) {
+            $this->db->table('member_desk_audit_hashes')->insertOrIgnore($rows);
+        }
+    }
+
+    /** @param int[] $entryIds */
+    public function forgetHashes(array $entryIds): void
+    {
+        $this->db->table('member_desk_audit_hashes')->whereIn('audit_id', $entryIds)->delete();
+    }
+
+    /**
+     * Ids of erasure entries that kept this email or IP's hash, newest first.
+     *
+     * @return int[]
+     */
+    public function entriesWithHash(string $value, int $limit): array
+    {
+        return $this->db->table('member_desk_audit_hashes')->where('hash', $this->hash($value))
+            ->orderByDesc('audit_id')->limit($limit)->pluck('audit_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
     public function hash(string $value): string
     {
-        $salt = (string) $this->settings->get('ernestdefoe-member-desk.salt');
+        return hash_hmac('sha256', strtolower(trim($value)), $this->salt());
+    }
 
-        return hash_hmac('sha256', strtolower(trim($value)), $salt);
+    /**
+     * The forum's own secret. The install migration creates it; if it was ever removed or left
+     * empty, a new one is made and saved here, so hashes are never salted with an empty string.
+     */
+    protected function salt(): string
+    {
+        $salt = (string) $this->settings->get('ernestdefoe-member-desk.salt');
+        if ($salt === '') {
+            $salt = Str::random(64);
+            $this->settings->set('ernestdefoe-member-desk.salt', $salt);
+        }
+
+        return $salt;
     }
 
     /**
