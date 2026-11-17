@@ -69,9 +69,7 @@ export default class MemberList extends Component {
               {t('list.tab_log')}
             </a>
           </nav>
-          <div className="MemberDesk-barActions">
-            {meta.can.export ? this.exportButton() : null}
-          </div>
+          <div className="MemberDesk-barActions">{meta.can.export ? this.exportButton() : null}</div>
         </div>
 
         <div className="MemberDesk-scope">
