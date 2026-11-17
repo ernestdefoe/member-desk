@@ -8,11 +8,13 @@ use ErnestDefoe\MemberDesk\Audit\Recorder;
 use ErnestDefoe\MemberDesk\MemberQuery;
 use ErnestDefoe\MemberDesk\Optional;
 use ErnestDefoe\MemberDesk\Presenter;
+use Flarum\Foundation\ValidationException;
 use Flarum\User\User;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Stream;
 use Psr\Http\Message\ResponseInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * CSV of the current filter (or the selected ids), written 500 rows at a time to a temp stream
@@ -31,6 +33,7 @@ class Export
         protected Optional $optional,
         protected Recorder $recorder,
         protected Cache $cache,
+        protected TranslatorInterface $translator,
     ) {
     }
 
@@ -40,6 +43,10 @@ class Export
         $ids = array_filter(array_map('intval', explode(',', (string) ($params['ids'] ?? ''))));
         $query = $ids ? User::query()->whereIn('id', $ids) : $this->query->build($actor, $params);
         $this->query->sort($query, $actor, $params['sort'] ?? null, $params['dir'] ?? null);
+        // Nothing matches: say so instead of sending a CSV that is only a header line (Claudius, d/267/10).
+        if (! (clone $query)->exists()) {
+            throw new ValidationException(['export' => $this->translator->trans('ernestdefoe-member-desk.lib.list.nothing_to_export')]);
+        }
 
         $cols = ['ips' => $this->access->ips($actor), 'suspend' => $this->optional->suspend(), 'gdpr' => $this->optional->gdpr()];
         $out = fopen('php://temp', 'w+');

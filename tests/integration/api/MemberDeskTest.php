@@ -536,6 +536,21 @@ class MemberDeskTest extends TestCase
     }
 
     #[Test]
+    public function an_export_that_matches_nobody_says_so_instead_of_sending_an_empty_csv(): void
+    {
+        $response = $this->send($this->request('GET', '/api/member-desk/export', ['authenticatedAs' => 1])->withQueryParams(['q' => 'nobody-by-this-name', 'dl' => uniqid()]));
+        $this->assertSame(422, $response->getStatusCode());
+        $body = (string) $response->getBody();
+        // The test forum doesn't load extension locales (every key comes back raw), so the
+        // message is checked by its key here; the forum shows "Nothing to export".
+        $error = json_decode($body, true)['errors'][0];
+        $this->assertSame('/data/attributes/export', $error['source']['pointer']);
+        $this->assertContains($error['detail'], ['Nothing to export', 'ernestdefoe-member-desk.lib.list.nothing_to_export']);
+        $this->assertStringNotContainsString('Username', $body, 'no header-only CSV');
+        $this->assertSame(0, AuditEntry::query()->where('action', 'export')->count(), 'nothing exported, nothing logged');
+    }
+
+    #[Test]
     public function one_export_click_logs_once_even_when_the_browser_fetches_it_twice(): void
     {
         // Claudius (ernestdefoe.online d/267/4): one click, two "Exported CSV" rows in the log.

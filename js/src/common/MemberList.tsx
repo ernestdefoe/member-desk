@@ -2,6 +2,7 @@ import app from 'flarum/common/app';
 import Component from 'flarum/common/Component';
 import Button from 'flarum/common/components/Button';
 import Icon from 'flarum/common/components/Icon';
+import Tooltip from 'flarum/common/components/Tooltip';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import type Mithril from 'mithril';
 import { deskState, type SavedFilter } from './DeskState';
@@ -69,11 +70,7 @@ export default class MemberList extends Component {
             </a>
           </nav>
           <div className="MemberDesk-barActions">
-            {meta.can.export ? (
-              <Button className="Button" icon="fas fa-file-csv" onclick={() => this.exportCsv()}>
-                {t('list.export')}
-              </Button>
-            ) : null}
+            {meta.can.export ? this.exportButton() : null}
           </div>
         </div>
 
@@ -673,6 +670,26 @@ export default class MemberList extends Component {
           s.load();
         }),
     });
+  }
+
+  /** Disabled with a reason when the current filter matches nobody (Claudius, ernestdefoe.online d/267/10). */
+  exportButton() {
+    const s = deskState();
+    const button = (
+      <Button className="Button" icon="fas fa-file-csv" disabled={!s.loading && s.total === 0} onclick={() => this.exportCsv()}>
+        {t('list.export')}
+      </Button>
+    );
+    if (s.loading || s.total !== 0) return button;
+
+    // A disabled button gets no hover events, so the tooltip sits on a wrapper.
+    return (
+      <Tooltip text={ts('list.nothing_to_export')}>
+        <span className="MemberDesk-exportWrap" tabindex="0">
+          {button}
+        </span>
+      </Tooltip>
+    );
   }
 
   exportCsv(selection = false) {
