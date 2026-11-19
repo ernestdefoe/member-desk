@@ -5,6 +5,7 @@ namespace ErnestDefoe\MemberDesk;
 use Carbon\Carbon;
 use Flarum\User\User;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
 /**
@@ -20,6 +21,7 @@ class Presenter
         protected Access $access,
         protected Optional $optional,
         protected ConnectionInterface $db,
+        protected TrustRead $trust,
     ) {
     }
 
@@ -33,6 +35,10 @@ class Presenter
         $showIps = $this->access->ips($actor);
         $lastIps = $showIps && $ids ? $this->lastIps($ids) : [];
         $banned = $showIps && $ids && $this->optional->banIps() ? $this->bannedFlags($ids, $lastIps) : [];
+        // One query for every row's trust state (Trust Levels' own table), never one per member.
+        if ($members instanceof EloquentCollection && $this->access->trust($actor) && ($eager = $this->trust->eager())) {
+            $members->loadMissing($eager);
+        }
 
         return $members->map(fn (User $m) => $this->row($actor, $m, $lastIps[$m->id] ?? null, isset($banned[$m->id])))->values()->all();
     }
@@ -63,11 +69,7 @@ class Presenter
             'bannedIp' => $banned,
             'isAdmin' => $this->access->isAdmin($m),
             'isYou' => $m->id === $actor->id,
-            'trust' => $this->access->trust($actor) ? [
-                'level' => (int) $m->getAttribute('trust_level'),
-                'locked' => (bool) $m->getAttribute('trust_locked'),
-                'silenced' => (bool) $m->getAttribute('trust_silenced_at'),
-            ] : null,
+            'trust' => $this->access->trust($actor) ? $this->trust->of($m) : null,
             // From Reports::addCounts() on the list (null where reports aren't shown to this viewer).
             'reports' => $m->getAttribute('md_reports_total') === null ? null
                 : ['total' => (int) $m->getAttribute('md_reports_total'), 'open' => (int) $m->getAttribute('md_reports_open')],

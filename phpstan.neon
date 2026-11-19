@@ -10,3 +10,5 @@ parameters:
     paths:
         - extend.php
         - src
+    bootstrapFiles:
+        - tests/phpstan/bootstrap.php
