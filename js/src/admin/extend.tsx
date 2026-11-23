@@ -24,15 +24,17 @@ export default [
       }),
       100
     )
+    // At the top: Member Desk IS the admin's Users page, which is easy to miss (Claudius, ernestdefoe.online d/267/15).
     .customSetting(
       () => (
-        <div className="Form-group">
+        <div className="Form-group MemberDesk-replaces">
+          <p className="MemberDesk-replacesText">{a('settings.replaces')}</p>
           <a className="Button Button--primary" href={'#' + app.route('users')}>
             {a('settings.open')}
           </a>
         </div>
       ),
-      90
+      110
     )
     .permission(() => ({ icon: 'fas fa-address-book', label: a('permissions.view'), permission: `${EXT}.view` }), 'moderate', 90)
     .permission(() => ({ icon: 'fas fa-envelope', label: a('permissions.view_emails'), permission: `${EXT}.viewEmails` }), 'moderate', 89)
